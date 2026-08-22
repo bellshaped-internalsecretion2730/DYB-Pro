@@ -35,7 +35,7 @@ class Structure:
             self.chain_ids = ["A"] * len(self.coords)
 
     def to_pdb(self) -> str:
-        lines = [f"REMARK  Foldsmith CA trace ({self.source}) {self.name}"]
+        lines = [f"REMARK  DYB Pro CA trace ({self.source}) {self.name}"]
         for i, ((x, y, z), aa, chain) in enumerate(
             zip(self.coords, self.sequence, self.chain_ids, strict=False), start=1
         ):

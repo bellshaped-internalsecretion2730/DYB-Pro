@@ -30,7 +30,7 @@ Devin is the autonomous research engine that produces both.
   structured plan (which child agents to spawn, with what task and ACU budget).
 * FR2.2 The orchestrator fans out to child sessions for the roles: `sequence`, `structure`,
   `docking`, `literature`, `ranking`.
-* FR2.3 Every session is created with tags (`foldsmith`, `project:<id>`, `cycle:<n>`,
+* FR2.3 Every session is created with tags (`dyb-pro`, `project:<id>`, `cycle:<n>`,
   `role:<role>`), a role playbook, a `max_acu_limit`, and a JSON-Schema
   `structured_output_schema` for machine-readable handoff.
 * FR2.4 Sessions are polled to completion; status, messages, ACU usage and structured output are

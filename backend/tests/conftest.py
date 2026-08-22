@@ -6,7 +6,7 @@ import os
 import tempfile
 from pathlib import Path
 
-TMP = Path(tempfile.mkdtemp(prefix="foldsmith-tests-"))
+TMP = Path(tempfile.mkdtemp(prefix="dyb-pro-tests-"))
 
 os.environ.update(
     {

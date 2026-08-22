@@ -3,15 +3,15 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://localhost:8000";
 
-const DEFAULT_KEY = process.env.NEXT_PUBLIC_DEMO_API_KEY || "foldsmith-demo-scientist";
+const DEFAULT_KEY = process.env.NEXT_PUBLIC_DEMO_API_KEY || "dyb-pro-demo-scientist";
 
 export function apiKey(): string {
   if (typeof window === "undefined") return DEFAULT_KEY;
-  return window.localStorage.getItem("foldsmith.apiKey") || DEFAULT_KEY;
+  return window.localStorage.getItem("dyb-pro.apiKey") || DEFAULT_KEY;
 }
 
 export function setApiKey(key: string) {
-  window.localStorage.setItem("foldsmith.apiKey", key);
+  window.localStorage.setItem("dyb-pro.apiKey", key);
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {

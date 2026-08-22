@@ -1,7 +1,7 @@
-"""Foldsmith playbook definitions.
+"""DYB Pro playbook definitions.
 
 Playbooks are reconciled with the Devin organization at startup (or on first cycle): if a playbook
-with the same Foldsmith slug already exists it is reused, otherwise it is created. The local
+with the same DYB Pro slug already exists it is reused, otherwise it is created. The local
 `PlaybookRef` table caches the mapping so cycles do not re-create playbooks.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-SLUG_PREFIX = "foldsmith"
+SLUG_PREFIX = "dyb-pro"
 
 
 @dataclass(frozen=True)
@@ -21,11 +21,11 @@ class PlaybookSpec:
 
 ORCHESTRATOR = PlaybookSpec(
     slug=f"{SLUG_PREFIX}-orchestrator",
-    title="Foldsmith Orchestrator — pre-wetlab design cycle supervisor",
+    title="DYB Pro Orchestrator — pre-wetlab design cycle supervisor",
     body="""\
-# Foldsmith orchestrator
+# DYB Pro orchestrator
 
-You supervise one *in-silico* protein design cycle for the Foldsmith pre-wetlab design OS. You do
+You supervise one *in-silico* protein design cycle for the DYB Pro pre-wetlab design OS. You do
 not run wet-lab work and you do not write code for the user's repository.
 
 ## Inputs you receive
@@ -57,9 +57,9 @@ not run wet-lab work and you do not write code for the user's repository.
 ROLE_PLAYBOOKS = {
     "sequence": PlaybookSpec(
         slug=f"{SLUG_PREFIX}-agent-sequence",
-        title="Foldsmith child agent — sequence design",
+        title="DYB Pro child agent — sequence design",
         body="""\
-# Foldsmith sequence agent
+# DYB Pro sequence agent
 
 You propose point-mutation designs from sequence-level evidence for one design cycle.
 
@@ -82,9 +82,9 @@ You propose point-mutation designs from sequence-level evidence for one design c
     ),
     "structure": PlaybookSpec(
         slug=f"{SLUG_PREFIX}-agent-structure",
-        title="Foldsmith child agent — structure & stability",
+        title="DYB Pro child agent — structure & stability",
         body="""\
-# Foldsmith structure agent
+# DYB Pro structure agent
 
 You propose designs from structural evidence (burial, contacts, secondary structure, geometry).
 
@@ -106,9 +106,9 @@ You propose designs from structural evidence (burial, contacts, secondary struct
     ),
     "docking": PlaybookSpec(
         slug=f"{SLUG_PREFIX}-agent-docking",
-        title="Foldsmith child agent — interface, docking & dynamics",
+        title="DYB Pro child agent — interface, docking & dynamics",
         body="""\
-# Foldsmith docking agent
+# DYB Pro docking agent
 
 You propose designs that change binding at the target interface.
 
@@ -129,9 +129,9 @@ You propose designs that change binding at the target interface.
     ),
     "literature": PlaybookSpec(
         slug=f"{SLUG_PREFIX}-agent-literature",
-        title="Foldsmith child agent — literature & prior art",
+        title="DYB Pro child agent — literature & prior art",
         body="""\
-# Foldsmith literature agent
+# DYB Pro literature agent
 
 You ground this design cycle in published evidence.
 
@@ -152,9 +152,9 @@ You ground this design cycle in published evidence.
     ),
     "ranking": PlaybookSpec(
         slug=f"{SLUG_PREFIX}-agent-ranking",
-        title="Foldsmith child agent — multi-objective ranking & triage",
+        title="DYB Pro child agent — multi-objective ranking & triage",
         body="""\
-# Foldsmith ranking agent
+# DYB Pro ranking agent
 
 You triage the pooled candidate set into a wet-lab shortlist rationale.
 
