@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AgentSwarm from "@/components/AgentSwarm";
-import DatabaseSearch from "@/components/DatabaseSearch";
 import AskPane from "@/components/AskPane";
 import CommandPalette, { type Command } from "@/components/CommandPalette";
+import DatabaseSearch from "@/components/DatabaseSearch";
 import FoldStrip from "@/components/FoldStrip";
 import ProteinViewer from "@/components/ProteinViewer";
 import ProviderBadge from "@/components/ProviderBadge";
