@@ -1,9 +1,11 @@
 "use client";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://localhost:8000";
+const DIRECT_API_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "";
+export const API_BASE = DIRECT_API_BASE || "/api/foldsmith";
 
-const DEFAULT_KEY = process.env.NEXT_PUBLIC_DEMO_API_KEY || "foldsmith-demo-scientist";
+const DEFAULT_KEY = DIRECT_API_BASE
+  ? process.env.NEXT_PUBLIC_DEMO_API_KEY || "foldsmith-demo-scientist"
+  : "";
 
 export function apiKey(): string {
   if (typeof window === "undefined") return DEFAULT_KEY;
@@ -15,9 +17,13 @@ export function setApiKey(key: string) {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}/api${path}`, {
+  const headers = new Headers(init.headers);
+  const key = apiKey();
+  if (DIRECT_API_BASE && !headers.has("X-API-Key")) headers.set("X-API-Key", key);
+  if (!DIRECT_API_BASE && key) headers.set("X-API-Key", key);
+  const res = await fetch(`${API_BASE}${DIRECT_API_BASE ? `/api${path}` : path}`, {
     ...init,
-    headers: { "X-API-Key": apiKey(), ...(init.headers || {}) },
+    headers,
     cache: "no-store",
   });
   if (!res.ok) {
@@ -45,7 +51,7 @@ export const api = {
     form.append("file", file);
     return request<T>(path, { method: "POST", body: form });
   },
-  downloadUrl: (path: string) => `${API_BASE}/api${path}`,
+  downloadUrl: (path: string) => `${API_BASE}${DIRECT_API_BASE ? `/api${path}` : path}`,
 };
 
 export type Provider = {

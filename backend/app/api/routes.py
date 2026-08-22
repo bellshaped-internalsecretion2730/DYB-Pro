@@ -36,7 +36,7 @@ from app.models import (
     User,
 )
 from app.security import current_user, enforce_quota, record_usage, require_role, usage_snapshot
-from app.services import ingest, learning, wetlab
+from app.services import databases, ingest, learning, wetlab
 from app.storage import store
 from app.toolkit import sequence as seqlib
 from app.versioning import (
@@ -58,6 +58,20 @@ scientist = Depends(require_role("scientist"))
 
 
 # --------------------------------------------------------------------- system
+
+
+@router.get("/databases/search", tags=["databases"])
+def database_search(
+    source: str,
+    query: str,
+    user: User = viewer,
+) -> dict:
+    try:
+        return databases.search(source, query)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except databases.DatabaseSearchError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
 
 @router.get("/healthz", tags=["system"])

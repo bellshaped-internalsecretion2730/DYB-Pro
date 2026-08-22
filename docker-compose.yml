@@ -100,12 +100,11 @@ services:
   web:
     build:
       context: ./frontend
-      args:
-        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
-        NEXT_PUBLIC_DEMO_API_KEY: ${NEXT_PUBLIC_DEMO_API_KEY:-foldsmith-demo-scientist}
     environment:
-      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
-      NEXT_PUBLIC_DEMO_API_KEY: ${NEXT_PUBLIC_DEMO_API_KEY:-foldsmith-demo-scientist}
+      FOLDSMITH_BACKEND_URL: http://api:8000
+      FOLDSMITH_API_KEY: ${SEED_SCIENTIST_API_KEY:-foldsmith-demo-scientist}
+      APP_BASIC_AUTH_USER: ${APP_BASIC_AUTH_USER:-}
+      APP_BASIC_AUTH_PASSWORD: ${APP_BASIC_AUTH_PASSWORD:-}
     ports:
       - "3000:3000"
     depends_on:

@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import AgentSwarm from "@/components/AgentSwarm";
+import DatabaseSearch from "@/components/DatabaseSearch";
 import ProviderBadge from "@/components/ProviderBadge";
 import ShortlistPanel from "@/components/ShortlistPanel";
+import StructureViewer from "@/components/StructureViewer";
 import VersionDag from "@/components/VersionDag";
 import {
   api,
@@ -293,6 +295,22 @@ export default function Workspace() {
             and citations.
           </p>
           <VersionDag graph={graph} />
+        </section>
+
+        <section className="panel">
+          <h2>Structure viewer</h2>
+          <p className="hint">
+            Inspect the selected project head commit when an experimental PDB structure is available.
+          </p>
+          <StructureViewer commitId={project?.head_commit_id ?? null} />
+        </section>
+
+        <section className="panel">
+          <h2>Public database search</h2>
+          <p className="hint">
+            Search public records with the upstream source and provenance shown explicitly.
+          </p>
+          <DatabaseSearch />
         </section>
 
         <section className="panel">
