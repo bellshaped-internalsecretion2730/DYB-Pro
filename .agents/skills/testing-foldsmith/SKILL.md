@@ -1,0 +1,1 @@
+file://C:/Users/Administrator/repos/ForesterKanez/.agents/skills/testing-foldsmith/SKILL.md
