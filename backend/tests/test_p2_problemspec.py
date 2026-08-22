@@ -113,6 +113,7 @@ def test_classify_uses_inclusive_threshold_and_explicit_undecidable_reasons(db, 
     db.add(spec)
     db.flush()
     assert classify(spec, _result(value=50.0))["decision"] == "hit"
+    assert classify(spec, _result(readout=""))["decision"] == "hit"
     assert classify(spec, _result(value=50.1))["decision"] == "miss"
     assert classify(spec, _result(value=55.0, objective="stability", readout="thermostability", unit="degC", higher_is_better=True))["decision"] == "hit"
     assert classify(

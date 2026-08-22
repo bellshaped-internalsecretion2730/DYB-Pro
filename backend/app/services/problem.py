@@ -153,7 +153,11 @@ def classify(spec: ProblemSpec, result: MeasuredResult) -> dict:
             "spec_version": spec.version,
         }
     result_readout = (result.readout or "").strip().lower()
-    if result.objective == objective["name"] and result_readout != objective["readout"].lower():
+    if (
+        result.objective == objective["name"]
+        and result_readout
+        and result_readout != objective["readout"].lower()
+    ):
         return {
             "decision": "undecidable",
             "reason": (
