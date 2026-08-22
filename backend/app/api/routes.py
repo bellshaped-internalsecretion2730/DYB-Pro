@@ -16,6 +16,8 @@ from app.api.schemas import (
     CommitOut,
     CycleCreate,
     CycleOut,
+    MeasuredResultCreate,
+    MeasuredResultOut,
     MergeRequest,
     ObservationOut,
     ProjectCreate,
@@ -30,13 +32,22 @@ from app.models import (
     Artifact,
     Branch,
     DesignCycle,
+    MeasuredResult,
     Observation,
     Project,
     ProteinCommit,
     User,
 )
-from app.security import current_user, enforce_quota, record_usage, require_role, usage_snapshot
-from app.services import ingest, learning, wetlab
+from app.security import (
+    can_access_project,
+    current_user,
+    enforce_quota,
+    record_usage,
+    require_project,
+    require_role,
+    usage_snapshot,
+)
+from app.services import calibration, ingest, learning, wetlab
 from app.storage import store
 from app.toolkit import sequence as seqlib
 from app.versioning import (
@@ -103,17 +114,19 @@ def _project_out(db: Session, project: Project) -> ProjectOut:
     )
 
 
-def _get_project(db: Session, project_id: str) -> Project:
-    project = db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
-    return project
+def _get_commit(db: Session, user: User, commit_id: str) -> ProteinCommit:
+    """Load a commit, treating one from an inaccessible project as non-existent."""
+    commit = db.get(ProteinCommit, commit_id)
+    if commit is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "commit not found")
+    require_project(db, user, commit.project_id)
+    return commit
 
 
 @router.get("/projects", response_model=list[ProjectOut], tags=["projects"])
 def list_projects(db: Session = Depends(get_db), user: User = viewer) -> list[ProjectOut]:
     projects = list(db.scalars(select(Project).order_by(Project.created_at.desc())))
-    return [_project_out(db, p) for p in projects]
+    return [_project_out(db, p) for p in projects if can_access_project(user, p)]
 
 
 @router.post("/projects", response_model=ProjectOut, tags=["projects"])
@@ -140,7 +153,7 @@ def create_project(
 def get_project(
     project_id: str, db: Session = Depends(get_db), user: User = viewer
 ) -> ProjectOut:
-    return _project_out(db, _get_project(db, project_id))
+    return _project_out(db, require_project(db, user, project_id))
 
 
 @router.post("/projects/{project_id}/uploads", tags=["projects"])
@@ -151,7 +164,7 @@ async def upload(
     db: Session = Depends(get_db),
     user: User = scientist,
 ) -> dict:
-    project = _get_project(db, project_id)
+    project = require_project(db, user, project_id, write=True)
     data = await file.read()
     if not data:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "empty file")
@@ -167,6 +180,7 @@ async def upload(
 def list_artifacts(
     project_id: str, db: Session = Depends(get_db), user: User = viewer
 ) -> list[dict]:
+    require_project(db, user, project_id)
     rows = db.scalars(
         select(Artifact)
         .where(Artifact.project_id == project_id)
@@ -194,6 +208,7 @@ def artifact_content(
     artifact = db.get(Artifact, artifact_id)
     if artifact is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
+    require_project(db, user, artifact.project_id)
     try:
         data = store.get(artifact.key, backend=artifact.backend)
     except OSError as exc:
@@ -231,7 +246,7 @@ def start_cycle(
     db: Session = Depends(get_db),
     user: User = scientist,
 ) -> CycleOut:
-    project = _get_project(db, project_id)
+    project = require_project(db, user, project_id, write=True)
     enforce_quota(db, user, payload.acu_limit)
     branch = get_branch(db, project.id, payload.branch, create=True)
     if not branch.head_commit_id:
@@ -264,6 +279,7 @@ def start_cycle(
 def list_cycles(
     project_id: str, db: Session = Depends(get_db), user: User = viewer
 ) -> list[CycleOut]:
+    require_project(db, user, project_id)
     rows = db.scalars(
         select(DesignCycle)
         .where(DesignCycle.project_id == project_id)
@@ -272,22 +288,24 @@ def list_cycles(
     return [_cycle_out(c) for c in rows]
 
 
-def _get_cycle(db: Session, cycle_id: str) -> DesignCycle:
+def _get_cycle(db: Session, user: User, cycle_id: str, write: bool = False) -> DesignCycle:
     cycle = db.get(DesignCycle, cycle_id)
     if cycle is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "cycle not found")
+    require_project(db, user, cycle.project_id, write=write)
     return cycle
 
 
 @router.get("/cycles/{cycle_id}", response_model=CycleOut, tags=["cycles"])
 def get_cycle(cycle_id: str, db: Session = Depends(get_db), user: User = viewer) -> CycleOut:
-    return _cycle_out(_get_cycle(db, cycle_id))
+    return _cycle_out(_get_cycle(db, user, cycle_id))
 
 
 @router.get("/cycles/{cycle_id}/agents", response_model=list[AgentRunOut], tags=["cycles"])
 def cycle_agents(
     cycle_id: str, db: Session = Depends(get_db), user: User = viewer
 ) -> list[AgentRunOut]:
+    _get_cycle(db, user, cycle_id)
     rows = db.scalars(
         select(AgentRun).where(AgentRun.cycle_id == cycle_id).order_by(AgentRun.created_at)
     )
@@ -317,7 +335,7 @@ def cycle_agents(
 
 @router.get("/cycles/{cycle_id}/shortlist", tags=["cycles"])
 def cycle_shortlist(cycle_id: str, db: Session = Depends(get_db), user: User = viewer) -> dict:
-    cycle = _get_cycle(db, cycle_id)
+    cycle = _get_cycle(db, user, cycle_id)
     if not cycle.shortlist:
         raise HTTPException(status.HTTP_409_CONFLICT, f"cycle is '{cycle.status}', no shortlist yet")
     return cycle.shortlist
@@ -330,7 +348,7 @@ def cancel_cycle(
     db: Session = Depends(get_db),
     user: User = scientist,
 ) -> dict:
-    cycle = _get_cycle(db, cycle_id)
+    cycle = _get_cycle(db, user, cycle_id, write=True)
     if cycle.status in {"committed", "partial", "failed", "cancelled"}:
         return {"status": cycle.status, "cancelled": 0}
     try:
@@ -348,6 +366,7 @@ def timeline(
     db: Session = Depends(get_db),
     user: User = viewer,
 ) -> list[ObservationOut]:
+    require_project(db, user, project_id)
     rows = db.scalars(
         select(Observation)
         .where(Observation.project_id == project_id)
@@ -370,9 +389,114 @@ def timeline(
 
 @router.get("/projects/{project_id}/memory", tags=["cycles"])
 def project_memory(project_id: str, db: Session = Depends(get_db), user: User = viewer) -> dict:
-    project = _get_project(db, project_id)
+    project = require_project(db, user, project_id)
     digest = learning.history_digest(db, project)
-    return {"digest": digest, "prompt_view": learning.digest_to_prompt(digest)}
+    return {
+        "digest": digest,
+        "prompt_view": learning.digest_to_prompt(digest),
+        "calibration": calibration.project_calibration(db, project.id),
+    }
+
+
+# ------------------------------------------------------------ measured results
+
+
+def _result_out(r: MeasuredResult) -> MeasuredResultOut:
+    return MeasuredResultOut(
+        id=r.id,
+        project_id=r.project_id,
+        commit_id=r.commit_id,
+        assay=r.assay,
+        objective=r.objective,
+        readout=r.readout,
+        value=r.value,
+        unit=r.unit,
+        higher_is_better=r.higher_is_better,
+        outcome=r.outcome,
+        origin=r.origin,
+        notes=r.notes,
+        created_at=r.created_at,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/results", response_model=MeasuredResultOut, tags=["wetlab"]
+)
+def add_result(
+    project_id: str,
+    payload: MeasuredResultCreate,
+    db: Session = Depends(get_db),
+    user: User = scientist,
+) -> MeasuredResultOut:
+    """Ingest a wet-lab measurement so the next cycle can learn from it.
+
+    The commit itself is never modified: measurements live alongside the immutable design and feed
+    the history digest and the drift calibration.
+    """
+    require_project(db, user, project_id, write=True)
+    commit = _get_commit(db, user, payload.commit_id)
+    if commit.project_id != project_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "commit not found")
+    result = MeasuredResult(
+        project_id=project_id,
+        commit_id=commit.id,
+        assay=payload.assay,
+        objective=payload.objective,
+        readout=payload.readout,
+        value=payload.value,
+        unit=payload.unit,
+        higher_is_better=payload.higher_is_better,
+        outcome=payload.outcome,
+        origin=payload.origin,
+        notes=payload.notes,
+        reported_by=user.id,
+    )
+    db.add(result)
+    db.flush()
+    db.add(
+        Observation(
+            project_id=project_id,
+            role="wetlab",
+            kind="measured_result",
+            summary=(
+                f"{payload.assay} on {commit.label or commit.id[:12]}: "
+                f"{payload.value} {payload.unit} ({payload.outcome}, {payload.origin})"
+            )[:4000],
+            payload={
+                "commit": commit.id,
+                "objective": payload.objective,
+                "value": payload.value,
+                "unit": payload.unit,
+                "outcome": payload.outcome,
+                "origin": payload.origin,
+            },
+        )
+    )
+    db.commit()
+    db.refresh(result)
+    return _result_out(result)
+
+
+@router.get(
+    "/projects/{project_id}/results", response_model=list[MeasuredResultOut], tags=["wetlab"]
+)
+def list_results(
+    project_id: str, db: Session = Depends(get_db), user: User = viewer
+) -> list[MeasuredResultOut]:
+    require_project(db, user, project_id)
+    rows = db.scalars(
+        select(MeasuredResult)
+        .where(MeasuredResult.project_id == project_id)
+        .order_by(MeasuredResult.created_at.desc())
+    )
+    return [_result_out(r) for r in rows]
+
+
+@router.get("/projects/{project_id}/calibration", tags=["wetlab"])
+def project_drift(project_id: str, db: Session = Depends(get_db), user: User = viewer) -> dict:
+    """Proxy-vs-measurement agreement for this project, plus what is still missing to have any."""
+    require_project(db, user, project_id)
+    return calibration.project_calibration(db, project_id)
 
 
 # -------------------------------------------------------------------- versions
@@ -407,7 +531,7 @@ def _commit_out(c: ProteinCommit) -> CommitOut:
 
 @router.get("/projects/{project_id}/graph", tags=["versions"])
 def project_graph(project_id: str, db: Session = Depends(get_db), user: User = viewer) -> dict:
-    _get_project(db, project_id)
+    require_project(db, user, project_id)
     return export_graph(db, project_id)
 
 
@@ -419,6 +543,7 @@ def list_commits(
     db: Session = Depends(get_db),
     user: User = viewer,
 ) -> list[CommitOut]:
+    require_project(db, user, project_id)
     stmt = select(ProteinCommit).where(ProteinCommit.project_id == project_id)
     if branch:
         stmt = stmt.where(ProteinCommit.branch == branch)
@@ -428,10 +553,7 @@ def list_commits(
 
 @router.get("/commits/{commit_id}", response_model=CommitOut, tags=["versions"])
 def get_commit(commit_id: str, db: Session = Depends(get_db), user: User = viewer) -> CommitOut:
-    commit = db.get(ProteinCommit, commit_id)
-    if commit is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "commit not found")
-    return _commit_out(commit)
+    return _commit_out(_get_commit(db, user, commit_id))
 
 
 @router.get("/commits/{commit_id}/lineage", tags=["versions"])
@@ -441,8 +563,7 @@ def commit_lineage(
     db: Session = Depends(get_db),
     user: User = viewer,
 ) -> dict:
-    if db.get(ProteinCommit, commit_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "commit not found")
+    _get_commit(db, user, commit_id)
     chain = lineage(db, commit_id, direction)
     return {
         "commit_id": commit_id,
@@ -455,8 +576,8 @@ def commit_lineage(
 def commit_structure(
     commit_id: str, db: Session = Depends(get_db), user: User = viewer
 ) -> Response:
-    commit = db.get(ProteinCommit, commit_id)
-    if commit is None or not commit.structure_key:
+    commit = _get_commit(db, user, commit_id)
+    if not commit.structure_key:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no structure for this commit")
     artifact = db.scalar(select(Artifact).where(Artifact.key == commit.structure_key))
     backend = artifact.backend if artifact else "s3"
@@ -464,7 +585,11 @@ def commit_structure(
         data = store.get(commit.structure_key, backend=backend)
     except OSError as exc:
         raise HTTPException(status.HTTP_410_GONE, f"structure unavailable: {exc}") from exc
-    return Response(content=data, media_type="chemical/x-pdb")
+    return Response(
+        content=data,
+        media_type="chemical/x-pdb",
+        headers={"X-Foldsmith-Structure-Source": commit.structure_source},
+    )
 
 
 @router.get("/diff", tags=["versions"])
@@ -474,6 +599,10 @@ def diff(
     db: Session = Depends(get_db),
     user: User = viewer,
 ) -> dict:
+    # Both sides are resolved through the tenancy check first, so a diff cannot be used to read a
+    # commit from a project the caller has no access to.
+    _get_commit(db, user, a)
+    _get_commit(db, user, b)
     try:
         return diff_commits(db, a, b)
     except KeyError as exc:
@@ -487,7 +616,7 @@ def create_branch(
     db: Session = Depends(get_db),
     user: User = scientist,
 ) -> dict:
-    _get_project(db, project_id)
+    require_project(db, user, project_id, write=True)
     try:
         branch = branch_from(db, project_id, payload.name, payload.from_commit)
     except KeyError as exc:
@@ -505,7 +634,7 @@ def merge(
     db: Session = Depends(get_db),
     user: User = scientist,
 ) -> dict:
-    _get_project(db, project_id)
+    require_project(db, user, project_id, write=True)
     try:
         commit = merge_branches(db, project_id, payload.ours, payload.theirs, payload.message)
     except MergeConflict as exc:
@@ -532,7 +661,7 @@ def export_cycle(
     db: Session = Depends(get_db),
     user: User = viewer,
 ) -> Response:
-    cycle = _get_cycle(db, cycle_id)
+    cycle = _get_cycle(db, user, cycle_id)
     pack = (cycle.shortlist or {}).get("pack")
     if not pack:
         raise HTTPException(status.HTTP_409_CONFLICT, f"cycle is '{cycle.status}', nothing to export")
@@ -559,7 +688,7 @@ def export_cycle(
 def export_project_graph(
     project_id: str, db: Session = Depends(get_db), user: User = viewer
 ) -> Response:
-    _get_project(db, project_id)
+    require_project(db, user, project_id)
     graph = export_graph(db, project_id)
     return Response(
         content=json.dumps(graph, indent=2, default=str),
@@ -575,7 +704,7 @@ def export_project_fasta(
     db: Session = Depends(get_db),
     user: User = viewer,
 ) -> PlainTextResponse:
-    _get_project(db, project_id)
+    require_project(db, user, project_id)
     stmt = select(ProteinCommit).where(ProteinCommit.project_id == project_id)
     if branch:
         stmt = stmt.where(ProteinCommit.branch == branch)

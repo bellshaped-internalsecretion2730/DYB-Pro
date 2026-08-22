@@ -7,7 +7,8 @@ import io
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import DesignCycle, User
+from app.models import DesignCycle, Project, User
+from app.security import hash_api_key
 from tests.conftest import headers
 
 FASTA = ">wt GB1\nMTYKLILNGKTLKGETTTEAVDAATAEKVFKQYANDNGVDGEWTYDDATKTFTVTE\n"
@@ -88,17 +89,39 @@ def test_fasta_upload_creates_a_root_commit(client):
     assert artifacts and artifacts[0]["sha256"]
 
 
-def test_structure_upload_is_labelled_experimental_not_a_model(client):
+def test_upload_does_not_claim_experimental_provenance_from_the_extension(client):
     project_id = _new_project(client)
     body = _upload(client, project_id, "wt.pdb", PDB).json()
     assert body["artifact"]["kind"] == "pdb"
     assert body["structure"]["residues"] == 3
     commit_id = body["commits"][0]["id"]
     commit = client.get(f"/api/commits/{commit_id}", headers=headers("viewer")).json()
-    assert commit["structure_source"] == "experimental:pdb"
+    assert commit["structure_source"] == "uploaded:pdb (provenance undeclared)"
     assert client.get(
         f"/api/commits/{commit_id}/structure", headers=headers("viewer")
     ).status_code == 200
+
+
+def test_declared_experimental_method_is_believed(client):
+    project_id = _new_project(client)
+    body = _upload(
+        client, project_id, "xray.pdb", "EXPDTA    X-RAY DIFFRACTION\n" + PDB
+    ).json()
+    commit = client.get(
+        f"/api/commits/{body['commits'][0]['id']}", headers=headers("viewer")
+    ).json()
+    assert commit["structure_source"] == "experimental:x-ray diffraction"
+
+
+def test_predicted_model_upload_is_labelled_as_a_model(client):
+    project_id = _new_project(client)
+    body = _upload(
+        client, project_id, "af.pdb", "REMARK   1 ALPHAFOLD pLDDT in B-factor\n" + PDB
+    ).json()
+    commit = client.get(
+        f"/api/commits/{body['commits'][0]['id']}", headers=headers("viewer")
+    ).json()
+    assert commit["structure_source"].startswith("model:")
 
 
 def test_unknown_and_empty_uploads_are_rejected(client):
@@ -248,6 +271,103 @@ def test_branch_merge_and_diff_over_http(client):
         f"/api/commits/{root}/lineage?direction=ancestors", headers=headers("viewer")
     ).json()
     assert lineage["lineage"] == []
+
+
+# -------------------------------------------------------------------- tenancy
+
+
+def test_another_scientists_project_is_readable_but_not_writable(client):
+    """Viewers read the whole workspace; only the owner (or an admin) may mutate a lineage."""
+    project_id = _new_project(client)
+    session = SessionLocal()
+    try:
+        project = session.get(Project, project_id)
+        other = User(
+            email="other-scientist@example.com",
+            role="scientist",
+            api_key_hash=hash_api_key("test-other"),
+        )
+        session.add(other)
+        session.flush()
+        project.owner_id = other.id
+        session.commit()
+    finally:
+        session.close()
+
+    assert client.get(
+        f"/api/projects/{project_id}", headers=headers("viewer")
+    ).status_code == 200
+    assert _upload(client, project_id, "wt.fasta", FASTA).status_code == 403
+    assert client.post(
+        f"/api/projects/{project_id}/cycles",
+        json={"brief": "hijack"},
+        headers=headers("scientist"),
+    ).status_code == 403
+    assert client.post(
+        f"/api/projects/{project_id}/branches",
+        json={"name": "nope", "from_commit": "x"},
+        headers=headers("scientist"),
+    ).status_code == 403
+    assert _upload(client, project_id, "wt.fasta", FASTA, role="admin").status_code == 200
+
+
+# ---------------------------------------------------------- measured results
+
+
+def test_measured_results_feed_calibration_without_touching_the_commit(client):
+    project_id = _new_project(client)
+    commit_id = _upload(client, project_id, "wt.fasta", FASTA).json()["commits"][0]["id"]
+    before = client.get(f"/api/commits/{commit_id}", headers=headers("viewer")).json()
+
+    created = client.post(
+        f"/api/projects/{project_id}/results",
+        json={
+            "commit_id": commit_id,
+            "assay": "SPR",
+            "objective": "binding_score",
+            "value": 12.5,
+            "unit": "nM",
+            "higher_is_better": False,
+            "outcome": "hit",
+        },
+        headers=headers("scientist"),
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["origin"] == "measured"
+
+    after = client.get(f"/api/commits/{commit_id}", headers=headers("viewer")).json()
+    assert after["scores"] == before["scores"]
+
+    listed = client.get(
+        f"/api/projects/{project_id}/results", headers=headers("viewer")
+    ).json()
+    assert len(listed) == 1
+
+    drift = client.get(
+        f"/api/projects/{project_id}/calibration", headers=headers("viewer")
+    ).json()
+    assert drift["measurements"] == 1
+    assert drift["hit_rate"] == 1.0
+    # One measurement cannot establish rank agreement between a proxy and reality.
+    assert all(o["kendall_tau"] is None for o in drift["objectives"].values())
+
+    timeline = client.get(
+        f"/api/projects/{project_id}/timeline", headers=headers("viewer")
+    ).json()
+    assert "measured_result" in {o["kind"] for o in timeline}
+
+
+def test_results_csv_upload_is_ingested_as_measurements(client):
+    project_id = _new_project(client)
+    commit_id = _upload(client, project_id, "wt.fasta", FASTA).json()["commits"][0]["id"]
+    csv_body = (
+        "commit,assay,objective,value,unit,outcome\n"
+        f"{commit_id},SPR,binding_score,4.2,nM,hit\n"
+        "unknown-commit,SPR,binding_score,9.9,nM,miss\n"
+    )
+    body = _upload(client, project_id, "results.csv", csv_body).json()
+    assert body["assays"] == 2
+    assert body["measured_results_ingested"] == 1
 
 
 def test_demo_seed_endpoint_gives_a_three_click_starting_point(client, demo_project_id):

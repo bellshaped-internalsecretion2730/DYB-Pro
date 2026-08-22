@@ -59,7 +59,7 @@ displayed:
 ## Development
 
 ```bash
-# backend: 50 tests, no network and no credentials needed
+# backend: no network and no credentials needed
 cd backend && pip install -r requirements.txt && pytest && ruff check .
 
 # api only (SQLite + local artifact storage fallback)
@@ -72,6 +72,30 @@ cd frontend && npm install && npm run typecheck && npm run build
 The compose stack runs Postgres, Redis, MinIO, the API, a Celery worker and the Next.js web app.
 Running the API alone falls back to SQLite, local artifact storage and inline (eager) cycle
 execution, so nothing extra is required for development.
+
+## What Foldsmith does not know
+
+Every in-silico number in Foldsmith is an **uncalibrated proxy**, reported in arbitrary units, and
+the product refuses to dress them up:
+
+* Folded structures are **coarse CA-only models** (`model:` provenance), not experimental
+  structures. Burial, contacts, compactness and docking read off that model, and each design
+  carries a `geometry_usable` flag when its own compactness/clash check fails.
+* The stability score is a directional, antisymmetric **risk proxy** — not kcal/mol, not a Tm
+  shift; epistasis between sites is not modelled.
+* Docking scores order candidates against one fixed receptor. They are not affinities and cannot
+  be converted to a KD. `minimize_geometry` is steepest descent on a soft potential, not MD.
+* The wet-lab pack says what to build and what to **measure**. It predicts no assay outcome and
+  reports no probability that a design validates.
+* Cost figures are indicative list prices for consumables/services, excluding labour and
+  overheads. Avoided spend is the cost of builds you did not order — not a validated saving.
+* Hit rates and proxy/measurement agreement (Kendall tau) appear only after you ingest measured
+  results (`POST /api/projects/{id}/results` or a results CSV), and stay per-project and
+  small-sample. Measurements never overwrite a commit's scores; drift stays inspectable at
+  `GET /api/projects/{id}/calibration`.
+
+Not yet built: the always-live research daemon (cached-literature reuse, debounced research events
+per diff) described in `REQUIREMENTS.md`. Research currently runs inside a design cycle only.
 
 Licensed under the repository's LICENSE. No proprietary third-party code, UI, text or data is
 used; all scoring methods are re-implemented from published, cited literature and are documented

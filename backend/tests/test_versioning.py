@@ -93,8 +93,41 @@ def test_branch_and_merge_of_disjoint_positions(db, project, root_commit):
     merged = merge_branches(db, project.id, "main", "alt", message="combine mechanisms")
     assert sorted(merged.parent_ids) == sorted([ours.id, theirs.id])
     assert merged.sequence[1] == "K" and merged.sequence[2] == "F"
-    assert merged.scores["merge_estimated"] == 1.0
+    # A merged sequence has never been evaluated: parent scores are kept as provenance, not
+    # averaged into a score for a sequence neither parent had.
+    assert merged.scores["needs_rescoring"] == 1.0
+    assert set(merged.scores["parent_scores"]) == {"ours", "theirs"}
+    assert "composite_score" not in merged.scores
     assert merged.filters["failed"] == ["requires_rescoring"]
+
+
+def test_commit_id_depends_on_the_structure_content(db, project, root_commit):
+    """Two commits with the same storage key but different coordinates are different commits."""
+    common = {
+        "project_id": project.id,
+        "sequence": root_commit.sequence,
+        "message": "same key, different coordinates",
+        "label": "model",
+        "branch": "main",
+        "provider": "local-simulation",
+        "structure_key": f"{project.id}/models/same.pdb",
+    }
+    a = commit_design(db, structure_content="ATOM 1 CA MET A 1 0.0 0.0 0.0", **common)
+    b = commit_design(db, structure_content="ATOM 1 CA MET A 1 9.9 0.0 0.0", **common)
+    assert a.id != b.id
+
+
+def test_branch_cannot_start_from_another_projects_commit(db, project, root_commit):
+    other = commit_design(
+        db,
+        project_id="some-other-project",
+        sequence=GB1,
+        message="root elsewhere",
+        label="wt",
+        provider="upload",
+    )
+    with pytest.raises(KeyError):
+        branch_from(db, project.id, "leak", other.id)
 
 
 def test_merge_conflict_is_reported_not_resolved(db, project, root_commit):

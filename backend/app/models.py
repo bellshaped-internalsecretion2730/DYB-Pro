@@ -192,6 +192,32 @@ class Observation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class MeasuredResult(Base):
+    """A real (or explicitly simulated) wet-lab measurement on one commit.
+
+    This is the only place in the system where a number comes from an instrument rather than a
+    heuristic, so it is kept separate from `ProteinCommit.scores` and never overwrites them: the
+    commit stays immutable and the drift between proxy and measurement stays inspectable.
+    """
+
+    __tablename__ = "measured_results"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    commit_id: Mapped[str] = mapped_column(ForeignKey("protein_commits.id"), index=True)
+    assay: Mapped[str] = mapped_column(String(128))
+    objective: Mapped[str] = mapped_column(String(64), default="")  # proxy this assay tests
+    readout: Mapped[str] = mapped_column(String(128), default="")
+    value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(64), default="")
+    higher_is_better: Mapped[bool] = mapped_column(Boolean, default=True)
+    outcome: Mapped[str] = mapped_column(String(32), default="unknown")  # hit|miss|inconclusive
+    origin: Mapped[str] = mapped_column(String(32), default="measured")  # measured|simulated
+    notes: Mapped[str] = mapped_column(Text, default="")
+    reported_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class UsageRecord(Base):
     __tablename__ = "usage_records"
 

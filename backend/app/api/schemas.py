@@ -118,6 +118,40 @@ class ObservationOut(BaseModel):
     created_at: datetime
 
 
+class MeasuredResultCreate(BaseModel):
+    """One wet-lab measurement on one commit. The only non-heuristic number in the system."""
+
+    commit_id: str
+    assay: str = Field(min_length=1, max_length=128)
+    value: float
+    unit: str = ""
+    objective: str = Field(
+        default="",
+        description="in-silico proxy this assay tests, e.g. binding_score; enables drift tracking",
+    )
+    readout: str = ""
+    higher_is_better: bool = True
+    outcome: str = Field(default="unknown", pattern="^(hit|miss|inconclusive|unknown)$")
+    origin: str = Field(default="measured", pattern="^(measured|simulated)$")
+    notes: str = ""
+
+
+class MeasuredResultOut(BaseModel):
+    id: str
+    project_id: str
+    commit_id: str
+    assay: str
+    objective: str
+    readout: str
+    value: float
+    unit: str
+    higher_is_better: bool
+    outcome: str
+    origin: str
+    notes: str
+    created_at: datetime
+
+
 class ProviderStatus(BaseModel):
     provider: str | None = None
     devin_configured: bool

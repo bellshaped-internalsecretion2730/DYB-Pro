@@ -27,7 +27,12 @@ def test_descriptors_are_physically_sane():
     assert 5000 < d["molecular_weight"] < 8000
     assert -2.0 < d["gravy"] < 1.0
     assert 3.0 < d["isoelectric_point"] < 11.0
-    assert set(d["secondary_structure"]) == {"helix", "sheet", "coil"}
+    ss = d["secondary_structure"]
+    # Composition-average propensities only: there is no predicted helix/sheet/coil content here.
+    assert set(ss) == {"helix_propensity", "sheet_propensity", "method"}
+    assert "propensity" in ss["method"]
+    assert 0.0 < d["instability_coverage"] <= 1.0
+    assert d["extinction_coefficient"] >= d["extinction_coefficient_reduced"]
 
 
 def test_apply_mutations_validates_wildtype():
@@ -53,6 +58,10 @@ def test_alignment_identity_is_symmetric_and_bounded():
     assert aln.identity == pytest.approx(1.0)
     partial = seqlib.align(GB1, GB1[:40])
     assert 0.0 < partial.identity <= 1.0
+    # A 40-residue prefix is not 100% identical to the full-length sequence: normalising over the
+    # shorter sequence would report 1.0 and hide 16 unmatched residues.
+    assert partial.identity < 1.0
+    assert partial.identity == pytest.approx(seqlib.align(GB1[:40], GB1).identity)
 
 
 def test_homology_search_ranks_self_first():

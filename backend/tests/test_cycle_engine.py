@@ -62,7 +62,13 @@ def test_cycle_produces_a_ranked_shortlist_with_economics(db, project, root_comm
     assert ranked and ranked[0]["rank"] == 1
     assert ranked[0]["why"]
     assert pack["shortlist"]
-    assert pack["economics"]["savings_usd"] >= 0
+    econ = pack["economics"]
+    assert econ["spend_avoided_usd"] >= 0
+    assert "savings_usd" not in econ  # no validated saving can be claimed
+    assert econ["cost_exclusions"]
+    # Without ingested measurements the pack must not report a hit rate at all.
+    assert pack["validation"]["measured_results"] == 0
+    assert pack["validation"]["measured_hit_rate"] is None
     assert cycle.shortlist["narrative"]["headline"]
 
 

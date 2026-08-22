@@ -74,6 +74,23 @@ def test_geometry_metrics_on_folded_model():
 def test_generated_models_are_never_labelled_experimental():
     model = folding.fold_sequence(GB1)
     assert "experimental" not in model.source
+    assert structlib.is_model(model)
+    summary = structlib.summary(model)
+    assert summary["is_model"] is True
+    assert summary["caveat"]
+
+
+@pytest.mark.parametrize("length", [56, 120, 336])
+def test_coarse_models_are_globular_not_extended_chains(length):
+    """A coarse fold must at least have protein-like dimensions, or every burial-derived
+    descriptor computed from it is an artifact of an extended chain."""
+    seq = (GB1 * 10)[:length]
+    model = folding.fold_sequence(seq)
+    rg = structlib.radius_of_gyration(model)
+    expected = folding.expected_radius_of_gyration(length)
+    assert rg < 2.5 * expected, (rg, expected)
+    assert structlib.compactness(model) < 2.5
+    assert structlib.geometry_usable(model)
 
 
 def test_template_threading_reuses_parent_geometry():
@@ -94,6 +111,22 @@ def test_developability_profile_and_filters():
     assert all({"name", "passed", "reason"} <= set(c) for c in verdict["checks"])
 
 
+def test_ddg_proxy_is_directional_and_not_reported_in_kcal():
+    """A free-energy difference is antisymmetric: swapping wild-type and mutant flips the sign."""
+    model = folding.fold_sequence(GB1)
+    forward = dev.ddg_proxy(GB1, [{"wt": "A", "position": 24, "mt": "W"}], structure=model)
+    reverse = dev.ddg_proxy(
+        GB1[:23] + "W" + GB1[24:],
+        [{"wt": "W", "position": 24, "mt": "A"}],
+        structure=model,
+    )
+    assert forward.value == pytest.approx(-reverse.value, abs=1e-3)
+    assert forward.value != 0.0
+    assert "kcal" not in forward.unit
+    assert "uncalibrated" in forward.unit
+    assert "not kcal/mol" in forward.detail["interpretation"]
+
+
 def test_docking_returns_uncertainty_and_interface():
     ligand = folding.fold_sequence(GB1)
     receptor = folding.fold_sequence(GB1[::-1])
@@ -103,3 +136,14 @@ def test_docking_returns_uncertainty_and_interface():
     assert result.poses > 1  # uncertainty comes from a pose ensemble
     assert isinstance(result.interface_residues, list)
     assert result.method
+    payload = result.as_dict()
+    assert "kcal" not in payload["unit"]
+    assert "KD" in payload["interpretation"]
+
+
+def test_geometry_minimisation_is_not_called_molecular_dynamics():
+    model = folding.fold_sequence(GB1)
+    out = docking.minimize_geometry(model, steps=5)
+    assert out["is_molecular_dynamics"] is False
+    assert "kcal" not in out["unit"]
+    assert not hasattr(docking, "relax")

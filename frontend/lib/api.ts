@@ -140,6 +140,8 @@ export type RankedCandidate = {
   why: string;
   why_not_next?: string | null;
   excluded_reason?: string | null;
+  missing_objectives?: string[];
+  confidence_meaning?: string;
 };
 
 export type ShortlistItem = {
@@ -151,9 +153,25 @@ export type ShortlistItem = {
   confidence: number;
   pareto_optimal: boolean;
   construct: { vector: string; orf_length_bp: number; orf: string; expression_host: string };
-  primers: { mutation: string; forward: string; reverse: string; tm_c: number }[];
-  assay_plan: { assay: string; readout: string; predicted_signal: string; estimated_cost_usd: number }[];
+  primers: {
+    mutation: string;
+    forward: string;
+    reverse: string;
+    tm_c: number;
+    template_source: string;
+    orderable: boolean;
+  }[];
+  assay_plan: {
+    assay: string;
+    readout: string;
+    tests_in_silico_proxy: string;
+    in_silico_value: number | null;
+    in_silico_units: string;
+    decision_rule: string;
+    estimated_cost_usd: number;
+  }[];
   cost: { route: string; total_usd: number };
+  geometry_usable: boolean;
   why: string;
   why_not_next?: string | null;
   citations: string[];
@@ -162,11 +180,21 @@ export type ShortlistItem = {
 export type Economics = {
   shortlist_size: number;
   candidate_pool: number;
+  cost_per_candidate_usd: number;
   shortlist_cost_usd: number;
-  test_everything_cost_usd: number;
-  savings_usd: number;
-  savings_pct: number;
-  expected_hits: number;
+  not_shortlisted: number;
+  spend_avoided_usd: number;
+  basis: string;
+  caveat: string;
+  cost_exclusions: string[];
+};
+
+/** What is measured, not predicted: a null hit rate means nothing has been measured yet. */
+export type ValidationStatus = {
+  measured_results: number;
+  measured_hit_rate: number | null;
+  proxy_agreement: Record<string, { kendall_tau: number | null; pairs: number; note?: string }>;
+  note: string;
 };
 
 export type Shortlist = {
@@ -174,6 +202,9 @@ export type Shortlist = {
     project: string;
     shortlist: ShortlistItem[];
     economics: Economics;
+    validation: ValidationStatus;
+    template_source: string;
+    primers_orderable: boolean;
     risks: { label: string; notes: string[] }[];
     citations: string[];
   };
