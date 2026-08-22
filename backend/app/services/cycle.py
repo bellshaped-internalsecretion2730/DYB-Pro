@@ -595,6 +595,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
             top_n=shortlist_size,
             total_candidate_pool=len(evaluations),
             calibration=calibration.project_calibration(db, project.id),
+            cycle_id=cycle.id,
         )
         narrative = analysis.narrate_cycle(
             {

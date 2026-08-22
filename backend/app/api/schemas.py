@@ -152,6 +152,26 @@ class MeasuredResultOut(BaseModel):
     created_at: datetime
 
 
+class FilterPerformanceOut(BaseModel):
+    tp: int
+    fp: int
+    tn: int
+    fn: int
+    ppv: float | None = None
+    npv: float | None = None
+    sensitivity: float | None = None
+    specificity: float | None = None
+    fnr: float | None = None
+    ppv_wilson_95: tuple[float, float] | None = None
+    npv_wilson_95: tuple[float, float] | None = None
+    sensitivity_wilson_95: tuple[float, float] | None = None
+    specificity_wilson_95: tuple[float, float] | None = None
+    fnr_wilson_95: tuple[float, float] | None = None
+    n_paired: int
+    status: str
+    n_required: int | None = None
+
+
 class ProviderStatus(BaseModel):
     provider: str | None = None
     devin_configured: bool

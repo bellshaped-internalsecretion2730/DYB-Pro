@@ -9,22 +9,11 @@ and the decision it feeds.
 
 from __future__ import annotations
 
-from app.toolkit import sequence as seqlib
+import random
 
-# Indicative list prices (USD) for a European/US academic core facility, per candidate. Order of
-# magnitude only: real quotes vary several-fold by vendor, volume and country.
-COSTS = {
-    "gene_synthesis_per_bp": 0.09,
-    "primer_per_base": 0.25,
-    "site_directed_mutagenesis_reaction": 45.0,
-    "transformation_and_plasmid_prep": 35.0,
-    "sequence_verification": 18.0,
-    "expression_purification_small_scale": 320.0,
-    "binding_assay_spr": 180.0,
-    "thermal_stability_dsf": 60.0,
-    "aggregation_sec": 95.0,
-    "endotoxin_qc": 40.0,
-}
+from app.services import economics, ranking
+from app.services.prices import COSTS, PRICE_CATALOG, PRICE_LIST_VERSION, TIERS
+from app.toolkit import sequence as seqlib
 
 # Cost drivers the model does not attempt to price.
 COST_EXCLUSIONS = [
@@ -193,22 +182,37 @@ def build_pack(
     total_candidate_pool: int | None = None,
     template_dna: str | None = None,
     calibration: dict | None = None,
+    tier: str = "T2",
+    budget: float | None = None,
+    target_confidence: float = 0.80,
+    prior_low: float | None = None,
+    prior_high: float | None = None,
+    probe_fraction: float = 0.10,
+    probe_seed: int | str | None = None,
+    cycle_id: str | None = None,
+    deciding_readout: str | None = None,
 ) -> dict:
     """Assemble the wet-lab pack for the top-N ranked candidates.
 
     `template_dna` is the user's actual plasmid/template sequence. Without it, primers are designed
     against a DYB Pro-generated ORF and are marked as not orderable.
+
+    Filter recall is unmeasured across this field, so rejected designs are the only source of a
+    future false-negative estimate; recall probes are therefore kept separate from hit planning.
     """
     template_source = (
         "user-supplied template" if template_dna else "dyb-pro-generated ORF"
     )
     parent_dna = template_dna or seqlib.back_translate(parent_sequence)
+    if tier not in TIERS:
+        raise ValueError(f"unknown assay tier: {tier}")
+    economics.validate_tier_for_readout(tier, deciding_readout)
+    prior = economics.validate_prior(prior_low, prior_high)
+    passing = [cand for cand in ranked if cand.passed_filters and not cand.excluded_reason]
+    clusters = ranking.cluster_candidates(passing)
+    selected = ranking.round_robin_clusters(clusters, top_n)
     shortlist: list[dict] = []
-    for cand in ranked:
-        if len(shortlist) >= top_n:
-            break
-        if not cand.passed_filters:
-            continue
+    for cand, cluster_id in selected:
         ev = evaluations[cand.label]
         primers = [
             mutagenesis_primers(parent_dna, m, template_source=template_source)
@@ -226,6 +230,7 @@ def build_pack(
                 "composite_score": cand.composite,
                 "confidence": cand.confidence,
                 "pareto_optimal": cand.pareto,
+                "cluster_id": cluster_id,
                 "geometry_usable": bool(ev.geometry_usable),
                 "scores": cand.scores,
                 "uncertainty": cand.uncertainty,
@@ -242,6 +247,14 @@ def build_pack(
                         "in_silico_units": "arbitrary units (uncalibrated proxy)",
                         "decision_rule": a["decision"],
                         "estimated_cost_usd": COSTS[a["cost_key"]],
+                        "estimated_cost_source": PRICE_CATALOG[
+                            {
+                                "binding_assay_spr": "spr",
+                                "thermal_stability_dsf": "nanodsf",
+                                "aggregation_sec": "sec",
+                                "expression_purification_small_scale": "expression_purification",
+                            }[a["cost_key"]]
+                        ].source,
                     }
                     for a in ASSAYS
                 ],
@@ -253,11 +266,53 @@ def build_pack(
     pool = total_candidate_pool if total_candidate_pool is not None else len(ranked)
     shortlist_cost = round(sum(c["cost"]["total_usd"] for c in shortlist), 2)
     not_shortlisted = max(0, pool - len(shortlist))
-    # Cost of the builds+assays that were not ordered, at the same per-candidate rate. This is an
-    # avoided *spend*, not a validated saving: it says nothing about whether the designs that were
-    # dropped would have worked, and comparing it to a "test everything" total that is itself
-    # derived from the shortlist size would make the percentage a restatement of top_n.
     per_candidate = shortlist_cost / max(1, len(shortlist))
+    plan_cost, plan_interval = economics.batch_cost(tier, shortlist)
+    baseline_passing = [cand for cand in ranked if cand.passed_filters]
+    baseline_candidates = [
+        {"sequence": evaluations[c.label].sequence, "mutations": evaluations[c.label].mutations}
+        for c in baseline_passing
+    ]
+    baseline_cost, baseline_interval = economics.batch_cost("T2", baseline_candidates)
+    stop_rule = economics.recommended_n(
+        clusters, tier, budget, target_confidence=target_confidence, prior=prior[:2]
+    )
+    n_eff = len({item["cluster_id"] for item in shortlist})
+    cost_per_hit = economics.cost_per_validated_hit(plan_cost, n_eff, prior[:2])
+    expected = [
+        economics.expected_hits(prior[0], n_eff),
+        economics.expected_hits(prior[1], n_eff),
+    ]
+    cost_ratio = (
+        [baseline_cost / plan_interval[1], baseline_cost / plan_interval[0]]
+        if plan_interval[0] > 0
+        else None
+    )
+    probe_pool = [cand for cand in ranked if not cand.passed_filters]
+    probe_count = max(1, round(probe_fraction * len(shortlist))) if probe_pool else 0
+    rng = random.Random(probe_seed if probe_seed is not None else cycle_id)
+    probes: list[dict] = []
+    for cand in rng.sample(probe_pool, min(probe_count, len(probe_pool))):
+        ev = evaluations[cand.label]
+        probe_record = {"sequence": ev.sequence, "mutations": ev.mutations}
+        probe_cost, probe_interval = economics.batch_cost(tier, [probe_record])
+        probes.append(
+            {
+                "probe": True,
+                "probe_reason": "filter recall estimation",
+                "label": cand.label,
+                "sequence": ev.sequence,
+                "mutations": [m.get("mutation") for m in ev.mutations],
+                "failed_filters": cand.failed_filters,
+                "cost": {
+                    "total_usd": probe_cost,
+                    "interval_usd": list(probe_interval),
+                    "source": economics.priced_line_items(tier, [probe_record]),
+                },
+            }
+        )
+    probe_cost = round(sum(item["cost"]["total_usd"] for item in probes), 2)
+    line_items = economics.priced_line_items(tier, shortlist)
     return {
         "project": project_name,
         "parent_sequence": parent_sequence,
@@ -265,6 +320,32 @@ def build_pack(
         "primers_orderable": bool(template_dna),
         "shortlist": shortlist,
         "economics": {
+            "price_list_version": PRICE_LIST_VERSION,
+            "tier": tier,
+            "tier_caveat": TIERS[tier]["caveat"],
+            "prior": {
+                "low": prior[0],
+                "high": prior[1],
+                "source": prior[2],
+                "shrinkage_applied": economics.CROSS_LAB_SHRINKAGE,
+            },
+            "n_tested": len(shortlist),
+            "n_eff": n_eff,
+            "batch_cost_usd": plan_cost,
+            "batch_cost_interval_usd": list(plan_interval),
+            "expected_hits": expected,
+            "cost_per_validated_hit_usd": list(cost_per_hit) if cost_per_hit else None,
+            "stop_rule": stop_rule,
+            "baseline": {
+                "name": "naive_all_filter_passing_at_T2",
+                "n": len(baseline_candidates),
+                "cost": baseline_cost,
+                "cost_interval_usd": list(baseline_interval),
+            },
+            "cost_ratio_vs_baseline": cost_ratio,
+            "line_items": line_items,
+            "probe_cost_usd": probe_cost,
+            "probe_note": "spent to estimate false-negative rate; excluded from hit expectations",
             "shortlist_size": len(shortlist),
             "candidate_pool": pool,
             "cost_per_candidate_usd": round(per_candidate, 2),
@@ -282,7 +363,13 @@ def build_pack(
             ),
             "cost_model": COSTS,
             "cost_exclusions": COST_EXCLUSIONS,
+            "disclaimer": "planning-model estimate; not validated savings",
         },
+        "probes": probes,
+        "independent_bets": len({item["cluster_id"] for item in shortlist}),
+        "spend_avoided_basis": (
+            "planning-model estimate; superseded by economics.cost_ratio_vs_baseline"
+        ),
         "validation": _validation_status(calibration),
         "risks": _risks(shortlist),
         "citations": sorted({c for item in shortlist for c in item["citations"]}),
