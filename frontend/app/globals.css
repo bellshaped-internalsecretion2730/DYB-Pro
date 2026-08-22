@@ -885,8 +885,15 @@ code,
   font-size: 11.5px;
 }
 
+/* the row label owns the tooltip, so it must not clip: the truncation lives on
+   the inner span instead */
 .barrow .name {
   color: var(--muted);
+  min-width: 0;
+}
+
+.barrow .name .clip {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
