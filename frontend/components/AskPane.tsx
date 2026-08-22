@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 import { agentState } from "@/components/AgentSwarm";
 import type { AgentRun, Cycle, Project } from "@/lib/api";
 
-const UNAVAILABLE = "not exposed by the Foldsmith API — cancel is the only live run control";
+const UNAVAILABLE = "not exposed by the DYB Pro API — cancel is the only live run control";
 
 export default function AskPane({
   projects,

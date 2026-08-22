@@ -252,7 +252,7 @@ export default function Workspace() {
     <>
       <header className="top">
         <div className="brand">
-          FOLD<span>SMITH</span>
+          DYB<span> Pro</span>
         </div>
         <span className="tagline">pre-wetlab design OS</span>
         <ProviderBadge provider={provider} />

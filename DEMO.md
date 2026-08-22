@@ -1,4 +1,4 @@
-# Foldsmith demo — 90 seconds
+# DYB Pro demo — 90 seconds
 
 ## Start (one command)
 
@@ -57,7 +57,7 @@ Run a second cycle without changing anything. Then check:
 ## Useful endpoints during the demo
 
 ```bash
-KEY=foldsmith-demo-scientist
+KEY=dyb-pro-demo-scientist
 curl -s localhost:8000/api/providers            | jq          # engine + reachability
 curl -s -H "X-API-Key: $KEY" localhost:8000/api/projects | jq
 curl -s -H "X-API-Key: $KEY" "localhost:8000/api/projects/$PID/graph" | jq '.nodes|length'
@@ -66,8 +66,8 @@ curl -s -H "X-API-Key: $KEY" "localhost:8000/api/cycles/$CID/export?fmt=csv"
 open http://localhost:8000/docs                              # OpenAPI
 ```
 
-Demo keys (rotate for anything real): `foldsmith-demo-admin`, `foldsmith-demo-scientist`,
-`foldsmith-demo-viewer` — RBAC is enforced, so the viewer key can read the graph but cannot start a
+Demo keys (rotate for anything real): `dyb-pro-demo-admin`, `dyb-pro-demo-scientist`,
+`dyb-pro-demo-viewer` — RBAC is enforced, so the viewer key can read the graph but cannot start a
 cycle.
 
 ## If something is off

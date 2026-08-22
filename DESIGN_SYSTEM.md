@@ -1,4 +1,4 @@
-# Foldsmith design system
+# DYB Pro design system
 
 Dark-first, true-black, hairline-bordered workspace for protein designers. The system is calm and
 dense: information carries the visual weight, decoration is minimal, and colour is reserved for

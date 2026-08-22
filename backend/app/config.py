@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = "http://localhost:3000"
 
-    database_url: str = "sqlite+pysqlite:///./foldsmith.db"
+    database_url: str = "sqlite+pysqlite:///./dybpro.db"
     redis_url: str = "redis://localhost:6379/0"
     celery_task_always_eager: bool = False
 
@@ -42,14 +42,14 @@ class Settings(BaseSettings):
     s3_endpoint_url: str | None = None
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
-    s3_bucket: str = "foldsmith"
+    s3_bucket: str = "dybpro"
     s3_region: str = "us-east-1"
     local_artifact_dir: str = "./artifacts"
 
     # Demo identities / quotas
-    seed_admin_api_key: str = "foldsmith-demo-admin"
-    seed_scientist_api_key: str = "foldsmith-demo-scientist"
-    seed_viewer_api_key: str = "foldsmith-demo-viewer"
+    seed_admin_api_key: str = "dyb-pro-demo-admin"
+    seed_scientist_api_key: str = "dyb-pro-demo-scientist"
+    seed_viewer_api_key: str = "dyb-pro-demo-viewer"
     default_acu_quota: int = 200
     default_cycle_quota: int = 25
 

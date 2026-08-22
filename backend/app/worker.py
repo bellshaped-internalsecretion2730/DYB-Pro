@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 celery_app = Celery(
-    "foldsmith",
+    "dyb-pro",
     broker=settings.redis_url,
     backend=settings.redis_url,
 )
@@ -29,7 +29,7 @@ celery_app.conf.update(
 )
 
 
-@celery_app.task(name="foldsmith.run_cycle", bind=True, max_retries=1)
+@celery_app.task(name="dyb-pro.run_cycle", bind=True, max_retries=1)
 def run_cycle_task(self, cycle_id: str) -> dict:
     from app.services.cycle import run_cycle
 
@@ -44,7 +44,7 @@ def run_cycle_task(self, cycle_id: str) -> dict:
         }
 
 
-@celery_app.task(name="foldsmith.cancel_cycle")
+@celery_app.task(name="dyb-pro.cancel_cycle")
 def cancel_cycle_task(cycle_id: str, reason: str = "cancelled by scientist") -> dict:
     from app.devin.runner import cancel_cycle
     from app.models import DesignCycle, utcnow
