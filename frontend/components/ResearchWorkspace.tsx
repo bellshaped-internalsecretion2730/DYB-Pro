@@ -257,7 +257,12 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
           onPlan={async (host, maxAssays) => {
             await act("plan", async () => {
               if (!commitId) return;
-              setPlan(await research.buildPlan(commitId, { host, max_assays: maxAssays }));
+              const [built, rk] = await Promise.all([
+                research.buildPlan(commitId, { host, max_assays: maxAssays }),
+                research.risk(commitId, host),
+              ]);
+              setPlan(built);
+              setRisk(rk);
             });
           }}
           onSimulate={async (seed) => {

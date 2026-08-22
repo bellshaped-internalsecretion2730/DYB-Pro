@@ -122,3 +122,18 @@ def test_wetlab_pack_has_orderable_content_and_cost_comparison():
     fasta = to_fasta(pack)
     assert fasta.startswith(">")
     assert fasta.count(">") == len(pack["shortlist"])
+
+
+def test_construct_follows_the_requested_host():
+    from app.services.wetlab import HOST_CONSTRUCTS, construct
+
+    for host, spec in HOST_CONSTRUCTS.items():
+        cons = construct(GB1, "design-1", host=host)
+        assert cons["expression_host"] == host
+        assert cons["vector"] == spec["vector"]
+        assert cons["tags"] == spec["tags"]
+        assert spec["assumption"] in cons["assumptions"]
+
+    # An unknown preset falls back to the documented default instead of inventing a host.
+    fallback = construct(GB1, "design-1", host="Pichia pastoris")
+    assert fallback["expression_host"] == "E. coli BL21(DE3)"
