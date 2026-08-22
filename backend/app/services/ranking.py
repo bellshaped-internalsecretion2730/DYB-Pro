@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.toolkit import sequence as seqlib
+
 # objective -> (weight, direction) where direction=-1 means lower is better.
 DEFAULT_OBJECTIVES: dict[str, tuple[float, int]] = {
     "binding_score": (0.30, -1),
@@ -86,6 +88,16 @@ class RankedCandidate:
             "why_not_next": self.why_not_next,
             "excluded_reason": self.excluded_reason,
         }
+
+
+@dataclass
+class Cluster:
+    representative: RankedCandidate
+    members: list[RankedCandidate] = field(default_factory=list)
+
+    @property
+    def rep(self) -> RankedCandidate:
+        return self.representative
 
 
 def _normalize_fixed(value: float, key: str, direction: int) -> float:
@@ -212,6 +224,7 @@ def rank(
                 payload={
                     "missing_objectives": row["missing_objectives"],
                     "geometry_usable": bool(ev.geometry_usable),
+                    "sequence": ev.sequence,
                 },
             )
         )
@@ -225,7 +238,62 @@ def rank(
 
 def _signature(ev) -> str:
     muts = ",".join(sorted(m.get("mutation") or "" for m in getattr(ev, "mutations", [])))
-    return muts or getattr(ev, "sequence", "")[:32]
+    return muts or getattr(ev, "sequence", "")
+
+
+def _candidate_sort_key(candidate: RankedCandidate):
+    return (
+        0 if candidate.passed_filters and not candidate.excluded_reason else 1,
+        -candidate.composite,
+        -candidate.confidence,
+        candidate.rank,
+    )
+
+
+def cluster_candidates(
+    candidates: list[RankedCandidate], threshold: float = 0.90
+) -> list[Cluster]:
+    """Greedily cluster ranked candidates by global-alignment identity.
+
+    Identity is matches divided by alignment length, including internal gaps, so near-identical
+    variants share a diversity bet while a short exact prefix of a long sequence does not.
+    """
+    clusters: list[Cluster] = []
+    for candidate in sorted(candidates, key=_candidate_sort_key):
+        sequence = candidate.payload.get("sequence") or ""
+        if not sequence:
+            sequence = getattr(candidate, "sequence", "") or ""
+        joined = False
+        for cluster in clusters:
+            representative = cluster.representative
+            rep_sequence = representative.payload.get("sequence") or ""
+            if not rep_sequence:
+                rep_sequence = getattr(representative, "sequence", "") or ""
+            if not sequence or not rep_sequence:
+                continue
+            alignment = seqlib.align(sequence, rep_sequence)
+            alignment_length = len(alignment.aligned_a)
+            matches = sum(
+                a == b for a, b in zip(alignment.aligned_a, alignment.aligned_b, strict=False)
+            )
+            identity = matches / alignment_length if alignment_length else 0.0
+            if identity >= threshold:
+                cluster.members.append(candidate)
+                joined = True
+                break
+        if not joined:
+            clusters.append(Cluster(candidate, [candidate]))
+    return clusters
+
+
+def round_robin_clusters(clusters: list[Cluster], top_n: int) -> list[tuple[RankedCandidate, int]]:
+    """Select one candidate from each cluster per pass through the ranked clusters."""
+    selected: list[tuple[RankedCandidate, int]] = []
+    for offset in range(max((len(c.members) for c in clusters), default=0)):
+        for cluster_id, cluster in enumerate(clusters):
+            if offset < len(cluster.members) and len(selected) < top_n:
+                selected.append((cluster.members[offset], cluster_id))
+    return selected
 
 
 def _why(ev, row: dict, active: dict) -> str:

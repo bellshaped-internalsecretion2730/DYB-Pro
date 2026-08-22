@@ -16,6 +16,7 @@ from app.api.schemas import (
     CommitOut,
     CycleCreate,
     CycleOut,
+    FilterPerformanceOut,
     MeasuredResultCreate,
     MeasuredResultOut,
     MergeRequest,
@@ -47,7 +48,7 @@ from app.security import (
     require_role,
     usage_snapshot,
 )
-from app.services import calibration, ingest, learning, wetlab
+from app.services import calibration, economics, ingest, learning, wetlab
 from app.storage import store
 from app.toolkit import sequence as seqlib
 from app.versioning import (
@@ -497,6 +498,33 @@ def project_drift(project_id: str, db: Session = Depends(get_db), user: User = v
     """Proxy-vs-measurement agreement for this project, plus what is still missing to have any."""
     require_project(db, user, project_id)
     return calibration.project_calibration(db, project_id)
+
+
+@router.get(
+    "/projects/{project_id}/filter-performance",
+    response_model=FilterPerformanceOut,
+    tags=["wetlab"],
+)
+def filter_performance(
+    project_id: str, db: Session = Depends(get_db), user: User = viewer
+) -> FilterPerformanceOut:
+    """Filter confusion matrix from paired measured hit/miss outcomes.
+
+    Unknown outcomes cannot be classified because Project has no numeric success criterion;
+    they are excluded rather than assigned a label.
+    """
+    require_project(db, user, project_id)
+    rows = db.execute(
+        select(ProteinCommit, MeasuredResult)
+        .join(MeasuredResult, MeasuredResult.commit_id == ProteinCommit.id)
+        .where(
+            ProteinCommit.project_id == project_id,
+            MeasuredResult.project_id == project_id,
+        )
+    ).all()
+    return FilterPerformanceOut(
+        **economics.filter_performance(rows)
+    )
 
 
 # -------------------------------------------------------------------- versions
