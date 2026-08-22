@@ -5,10 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 from app.devin.prompts import child_prompt, orchestrator_prompt
-from app.models import MeasuredResult, ProblemSpec
+from app.models import DesignCycle, MeasuredResult, ProblemSpec
+from app.services.cycle import run_cycle
 from app.services.economics import cheapest_tier_for_readout, filter_performance
 from app.services.prices import TIERS
-from app.services.problem import SpecError, classify, validate_spec
+from app.services.problem import SpecError, classify, prompt_block, validate_spec
 from tests.conftest import headers
 
 
@@ -117,6 +118,12 @@ def test_classify_uses_inclusive_threshold_and_explicit_undecidable_reasons(db, 
     assert classify(
         spec, _result(objective="other", readout="not_declared")
     )["decision"] == "undecidable"
+    conflict = classify(
+        spec, _result(readout="thermostability", unit="nM")
+    )
+    assert conflict["decision"] == "undecidable"
+    assert "affinity" in conflict["reason"]
+    assert "thermostability" in conflict["reason"]
     assert classify(spec, _result(unit="uM"))["decision"] == "undecidable"
     assert classify(spec, _result(higher_is_better=True))["decision"] == "undecidable"
     assert classify(spec, _result(value=float("nan")))["decision"] == "undecidable"
@@ -149,6 +156,13 @@ def test_filter_performance_aggregates_designs_and_preserves_no_spec_counts():
     assert (body["tp"], body["fp"], body["tn"], body["fn"]) == (1, 1, 1, 1)
     assert body["classification_source"] == "reported_outcome"
     assert body["n_designs"] == 4
+    rows_without_ids = [
+        (SimpleNamespace(filters={"passed": True}), _result(outcome="hit")),
+        (SimpleNamespace(filters={"passed": True}), _result(outcome="hit")),
+    ]
+    without_ids = filter_performance(rows_without_ids)
+    assert without_ids["n_designs"] == 2
+    assert without_ids["n_paired"] == 2
 
 
 def test_filter_performance_spec_conflicts_and_disagreements(db, project):
@@ -208,6 +222,35 @@ def test_cheapest_tier_for_readout_uses_catalogue_costs():
     assert cheapest_tier_for_readout("thermostability", candidates) == "T2"
     assert cheapest_tier_for_readout("unknown", candidates) is None
     assert "T1" in TIERS
+
+
+def test_cycle_prices_realistic_filter_passing_designs_for_tier_choice(
+    db, project, root_commit
+):
+    validated = validate_spec(_payload())
+    db.add(
+        ProblemSpec(
+            project_id=project.id,
+            version=1,
+            status="active",
+            objectives=validated["objectives"],
+            hard_constraints=[],
+            deciding_objective="affinity",
+            target_readout="binding_kd",
+        )
+    )
+    cycle = DesignCycle(
+        project_id=project.id,
+        brief="tier choice",
+        round=1,
+        branch="main",
+        acu_limit=20,
+        status="queued",
+    )
+    db.add(cycle)
+    db.commit()
+    cycle = run_cycle(db, cycle.id, sleep=lambda *_: None)
+    assert cycle.shortlist["pack"]["economics"]["tier"] == "T1"
 
 
 def test_problem_spec_endpoints_version_and_tenancy(client, project):
@@ -274,3 +317,14 @@ def test_prompt_problem_spec_is_optional():
     }
     assert "OBJECTIVES" not in child_prompt(**child_args)
     assert "OBJECTIVES" in child_prompt(**child_args, problem_spec="OBJECTIVES")
+
+
+def test_prompt_block_omits_empty_hard_constraints():
+    spec = ProblemSpec(
+        version=1,
+        objectives=validate_spec(_payload())["objectives"],
+        deciding_objective="affinity",
+        hard_constraints=[],
+    )
+    rendered = prompt_block(spec)
+    assert "HARD CONSTRAINTS" not in rendered

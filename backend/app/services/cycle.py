@@ -720,8 +720,16 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
 
         # 6) wet-lab pack ------------------------------------------------------
         deciding_readout = active_spec.target_readout if active_spec else None
+        bench_candidates = [
+            {
+                "sequence": by_label[candidate.label].sequence,
+                "mutations": by_label[candidate.label].mutations,
+            }
+            for candidate in ranked
+            if candidate.passed_filters and not candidate.excluded_reason
+        ]
         tier = (
-            economics.cheapest_tier_for_readout(deciding_readout, ranked) or "T2"
+            economics.cheapest_tier_for_readout(deciding_readout, bench_candidates) or "T2"
             if active_spec
             else "T2"
         )

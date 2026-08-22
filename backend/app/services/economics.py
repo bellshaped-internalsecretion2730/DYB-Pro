@@ -12,6 +12,7 @@ from app.services.prices import (
     item_cost,
     item_cost_interval,
 )
+from app.services.problem import classify
 
 LITERATURE_HIT_BAND = (0.10, 0.46)
 CROSS_LAB_SHRINKAGE = 0.5
@@ -219,11 +220,9 @@ def wilson(k: int, n: int, z: float = 1.959964) -> tuple[float, float] | None:
 
 def filter_performance(rows: Iterable[tuple[object, object]], spec=None) -> dict:
     """Build one-observation-per-design confusion counts and Wilson intervals."""
-    from app.services.problem import classify
-
     grouped: dict[str, list[tuple[object, object]]] = {}
     for index, (commit, result) in enumerate(rows):
-        commit_id = getattr(commit, "id", None) or f"row-{id(commit) if commit is not None else index}"
+        commit_id = getattr(commit, "id", None) or f"row-{index}"
         grouped.setdefault(commit_id, []).append((commit, result))
     tp = fp = tn = fn = 0
     conflicting = undecidable = outcome_disagreements = 0

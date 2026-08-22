@@ -152,6 +152,18 @@ def classify(spec: ProblemSpec, result: MeasuredResult) -> dict:
             "objective": None,
             "spec_version": spec.version,
         }
+    result_readout = (result.readout or "").strip().lower()
+    if result.objective == objective["name"] and result_readout != objective["readout"].lower():
+        return {
+            "decision": "undecidable",
+            "reason": (
+                f"objective/readout conflict: result objective '{result.objective}' "
+                f"carries readout '{result.readout}', spec objective '{objective['name']}' "
+                f"declares '{objective['readout']}'"
+            ),
+            "objective": objective["name"],
+            "spec_version": spec.version,
+        }
     measured_unit = (result.unit or "").strip()
     declared_unit = objective["unit"]
     if measured_unit.lower() != declared_unit.strip().lower():
@@ -218,9 +230,10 @@ def prompt_block(spec: ProblemSpec, calibration_data: dict | None = None) -> str
             f"- {objective['name']}{suffix}: {objective['readout']} {direction} "
             f"{objective['threshold']} {objective['unit']}  (proxy: {proxy_text})"
         )
-    lines.append("HARD CONSTRAINTS (declared, not enforced in code)")
-    for constraint in spec.hard_constraints or []:
-        lines.append(f"- {constraint['name']}: {constraint['description']}")
+    if spec.hard_constraints:
+        lines.append("HARD CONSTRAINTS (declared, not enforced in code)")
+        for constraint in spec.hard_constraints:
+            lines.append(f"- {constraint['name']}: {constraint['description']}")
     return "\n".join(lines)
 
 
