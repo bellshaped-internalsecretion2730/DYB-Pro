@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     research_acu_limit: int = 3
     research_max_topics_per_event: int = 4
 
+    # Research lab loop daemon (papers, labels, wet-lab plans/results, drift)
+    daemon_enabled: bool = True
+    daemon_tick_seconds: float = 5.0
+    daemon_debounce_seconds: float = 6.0
+    daemon_max_attempts: int = 3
+    daemon_child_acu_limit: int = 4
+    daemon_child_timeout_seconds: float = 420.0
+    daemon_literature_network: bool = True
+
     # Pharmakon
     public_api_base: str = "http://localhost:8000"
     pharma_daemon_frequency: str = "daily"
