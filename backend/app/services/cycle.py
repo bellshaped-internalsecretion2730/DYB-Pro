@@ -17,8 +17,27 @@ from app.config import get_settings
 from app.devin import prompts as promptlib
 from app.devin.runner import PROVIDER_DEVIN, AgentSupervisor, LaunchSpec
 from app.devin.schemas import PLAN_SCHEMA, ROLES, schema_for
-from app.models import AgentRun, Artifact, DesignCycle, Observation, Project, ProteinCommit, utcnow
-from app.services import analysis, calibration, learning, ranking, research, wetlab
+from app.models import (
+    AgentRun,
+    Artifact,
+    DesignCycle,
+    Observation,
+    ProblemSpec,
+    Project,
+    ProteinCommit,
+    utcnow,
+)
+from app.services import (
+    analysis,
+    autonomy,
+    calibration,
+    economics,
+    learning,
+    problem,
+    ranking,
+    research,
+    wetlab,
+)
 from app.services.evaluation import Candidate, Evaluation, evaluate_all
 from app.storage import store
 from app.toolkit import developability as dev
@@ -250,6 +269,17 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
     if cycle.status == "cancelled":
         return cycle
     project = db.get(Project, cycle.project_id)
+    active_spec = db.scalar(
+        select(ProblemSpec).where(
+            ProblemSpec.project_id == project.id,
+            ProblemSpec.status == "active",
+        )
+    )
+    spec_prompt = (
+        problem.prompt_block(active_spec, calibration.project_calibration(db, project.id))
+        if active_spec
+        else None
+    )
 
     branch = get_branch(db, project.id, cycle.branch, create=True)
     if not branch.head_commit_id:
@@ -298,6 +328,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
             history=history_text,
             available_roles=list(ROLES),
             shortlist_size=shortlist_size,
+            problem_spec=spec_prompt,
         )
         orchestrator = supervisor.launch(
             LaunchSpec(
@@ -320,6 +351,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
 
         supervisor.wait_for([orchestrator], sleep=sleep)
         plan = orchestrator.structured_output or {}
+        plan_fallback = not plan.get("agents")
         if not plan.get("agents"):
             plan = {
                 "strategy": (
@@ -344,10 +376,30 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
             role="orchestrator",
             agent_run_id=orchestrator.id,
         )
+        autonomy.record(
+            db,
+            project.id,
+            "plan",
+            "strategy=agent_plan" if not plan_fallback else "strategy=fallback",
+            actor="system" if plan_fallback else "agent:orchestrator",
+            autonomy="fallback" if plan_fallback else "agent_advised",
+            basis={
+                "strategy": plan.get("strategy", ""),
+                "agent_roles": [a.get("role") for a in plan.get("agents", [])],
+                "session_url": orchestrator.devin_session_url,
+            },
+            reversible=True,
+            confidence_basis=(
+                "orchestrator plan is an agent recommendation; "
+                "fallback indicates no usable plan"
+            ),
+            cycle_id=cycle.id,
+        )
 
         # 2) fan out -----------------------------------------------------------
         cycle.status = "fanning_out"
         db.commit()
+        requested_roles = [str(a.get("role", "")).strip() for a in plan.get("agents", [])]
         child_specs = []
         for agent in plan.get("agents", []):
             role = str(agent.get("role", "")).strip()
@@ -389,6 +441,23 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                     },
                 )
             )
+        launched_roles = [run.role for run in runs]
+        autonomy.record(
+            db,
+            project.id,
+            "fanout",
+            f"launched_roles={','.join(launched_roles)}",
+            actor="system",
+            autonomy="autonomous",
+            basis={
+                "requested_roles": requested_roles,
+                "launched_roles": launched_roles,
+                "dropped_roles": [role for role in requested_roles if role not in launched_roles],
+            },
+            reversible=True,
+            confidence_basis="fan-out follows the validated role vocabulary and cycle limits",
+            cycle_id=cycle.id,
+        )
         cycle.status = "awaiting_agents"
         db.commit()
 
@@ -450,6 +519,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
 
         ranking_run: AgentRun | None = None
         if any(a.get("role") == "ranking" for a in plan.get("agents", [])):
+            ranking_before = [candidate.label for candidate in ranked]
             summary_rows = [
                 {
                     "label": r.label,
@@ -507,6 +577,49 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                 role="ranking",
                 agent_run_id=ranking_run.id,
             )
+        else:
+            ranking_before = [candidate.label for candidate in ranked]
+        autonomy.record(
+            db,
+            project.id,
+            "ranking_order",
+            f"top={','.join(candidate.label for candidate in ranked[:5])}",
+            actor="agent:ranking" if ranking_run else "system",
+            autonomy="agent_advised" if ranking_run else "autonomous",
+            basis={
+                "top_labels_before": ranking_before[:5],
+                "top_labels_after": [candidate.label for candidate in ranked[:5]],
+                "agent_exclusions": [
+                    candidate.label for candidate in ranked if candidate.excluded_reason
+                ],
+            },
+            reversible=True,
+            confidence_basis=(
+                "ranking order is deterministic unless an optional ranking agent triages the cohort"
+            ),
+            cycle_id=cycle.id,
+        )
+        failed_filter_names = sorted(
+            {name for candidate in ranked for name in candidate.failed_filters}
+        )
+        autonomy.record(
+            db,
+            project.id,
+            "filter_gate",
+            f"passing={sum(candidate.passed_filters for candidate in ranked)}",
+            actor="system",
+            autonomy="autonomous",
+            basis={
+                "passing": sum(candidate.passed_filters for candidate in ranked),
+                "failing": sum(not candidate.passed_filters for candidate in ranked),
+                "failed_filter_names": failed_filter_names,
+            },
+            reversible=True,
+            confidence_basis=(
+                "filter recall is unmeasured; see filter-performance once >=10 paired designs exist"
+            ),
+            cycle_id=cycle.id,
+        )
 
         # 5) commit ------------------------------------------------------------
         commits: list[ProteinCommit] = []
@@ -585,8 +698,49 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                 "no candidate passed the hard filters; branch head left on the parent commit",
                 {"branch": branch.name, "head_commit": previous_head},
             )
+        autonomy.record(
+            db,
+            project.id,
+            "branch_head",
+            f"chosen_commit={head_commit.id if head_commit else previous_head}",
+            actor="system",
+            autonomy="autonomous" if head_commit else "human_required",
+            basis={
+                "chosen_commit": head_commit.id if head_commit else previous_head,
+                "previous_head": previous_head,
+                "unchanged": head_commit is None,
+            },
+            reversible=False,
+            confidence_basis=(
+                "the head follows the highest-ranked passing design; no passing design requires human review"
+            ),
+            cycle_id=cycle.id,
+            commit_id=head_commit.id if head_commit else previous_head,
+        )
 
         # 6) wet-lab pack ------------------------------------------------------
+        deciding_readout = active_spec.target_readout if active_spec else None
+        tier = (
+            economics.cheapest_tier_for_readout(deciding_readout, ranked) or "T2"
+            if active_spec
+            else "T2"
+        )
+        autonomy.record(
+            db,
+            project.id,
+            "tier_choice",
+            f"tier={tier}",
+            actor="system",
+            autonomy="autonomous",
+            basis={
+                "tier": tier,
+                "deciding_readout": deciding_readout,
+                "spec_version": active_spec.version if active_spec else None,
+            },
+            reversible=True,
+            confidence_basis="tier is selected from the declared assay capability map and catalogue prices",
+            cycle_id=cycle.id,
+        )
         pack = wetlab.build_pack(
             ranked,
             by_label,
@@ -595,6 +749,45 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
             top_n=shortlist_size,
             total_candidate_pool=len(evaluations),
             calibration=calibration.project_calibration(db, project.id),
+            cycle_id=cycle.id,
+            tier=tier,
+            deciding_readout=deciding_readout,
+        )
+        stop_rule = pack.get("economics", {}).get("stop_rule", {})
+        autonomy.record(
+            db,
+            project.id,
+            "shortlist_stop_rule",
+            f"n_eff={stop_rule.get('n_eff', 0)}",
+            actor="system",
+            autonomy="autonomous",
+            basis={
+                "n_eff": stop_rule.get("n_eff"),
+                "stop_reason": stop_rule.get("stop_reason"),
+                "achieved_confidence": stop_rule.get("achieved_confidence"),
+                "target_confidence": stop_rule.get("target_confidence"),
+                "budget_limited": stop_rule.get("budget_limited"),
+            },
+            reversible=True,
+            confidence_basis="stop rule uses the declared prior and planning-model budget arithmetic",
+            cycle_id=cycle.id,
+        )
+        autonomy.record(
+            db,
+            project.id,
+            "probe_sampling",
+            f"probes={len(pack.get('probes', []))}",
+            actor="system",
+            autonomy="autonomous",
+            basis={
+                "probe_count": len(pack.get("probes", [])),
+                "seed": cycle.id,
+                "probe_cost": pack.get("economics", {}).get("probe_cost_usd"),
+            },
+            reversible=False,
+            confidence_basis=(
+                "filter recall is unmeasured; probes are the only future source of false-negative evidence"
+            ),
             cycle_id=cycle.id,
         )
         narrative = analysis.narrate_cycle(
