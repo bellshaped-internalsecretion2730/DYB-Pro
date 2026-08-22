@@ -235,6 +235,85 @@ class DevinClient:
             payload["structured_output_schema"] = structured_output_schema
         return self._request("POST", f"/v3/organizations/{self.org_id}/playbooks", json=payload)
 
+    # ---------------------------------------------------------------- schedules
+
+    def list_schedules(self) -> list[dict]:
+        """Scheduled sessions, used by the research daemon. v3 organization API only."""
+        if self.flavor != "v3":
+            return []
+        data = self._request("GET", f"/v3/organizations/{self.org_id}/schedules")
+        return list(data.get("schedules") or data.get("items") or [])
+
+    def create_schedule(
+        self,
+        name: str,
+        prompt: str,
+        *,
+        frequency: str = "daily",
+        interval_count: int = 1,
+        playbook_id: str | None = None,
+        tags: list[str] | None = None,
+        notify_on: str = "failure",
+    ) -> dict:
+        if self.flavor != "v3":
+            raise DevinNotConfigured("schedules require the v3 organization API")
+        payload: dict[str, Any] = {
+            "name": name,
+            "prompt": prompt,
+            "schedule_type": "recurring",
+            "frequency": frequency,
+            "interval_count": int(interval_count),
+            "notify_on": notify_on,
+        }
+        if playbook_id:
+            payload["playbook_id"] = playbook_id
+        if tags:
+            payload["tags"] = tags
+        return self._request("POST", f"/v3/organizations/{self.org_id}/schedules", json=payload)
+
+    def delete_schedule(self, scheduled_session_id: str) -> dict:
+        if self.flavor != "v3":
+            raise DevinNotConfigured("schedules require the v3 organization API")
+        return self._request(
+            "DELETE", f"/v3/organizations/{self.org_id}/schedules/{scheduled_session_id}"
+        )
+
+    # ---------------------------------------------------------------- knowledge
+
+    def list_knowledge(self) -> list[dict]:
+        """Existing org knowledge notes (v3: `/knowledge/notes`, v1: `/v1/knowledge`)."""
+        if self.flavor == "v3":
+            data = self._request("GET", f"/v3/organizations/{self.org_id}/knowledge/notes")
+        else:
+            data = self._request("GET", "/v1/knowledge")
+        return list(data.get("notes") or data.get("knowledge") or data.get("items") or [])
+
+    def create_knowledge(self, name: str, body: str, trigger: str) -> dict:
+        if self.flavor == "v3":
+            return self._request(
+                "POST",
+                f"/v3/organizations/{self.org_id}/knowledge/notes",
+                json={"name": name, "body": body, "trigger": trigger},
+            )
+        return self._request(
+            "POST",
+            "/v1/knowledge",
+            json={"name": name, "body": body, "trigger_description": trigger},
+        )
+
+    def update_knowledge(self, note_id: str, name: str, body: str, trigger: str) -> dict:
+        if self.flavor == "v3":
+            return self._request(
+                "PUT",
+                f"/v3/organizations/{self.org_id}/knowledge/notes/{note_id}",
+                json={"name": name, "body": body, "trigger": trigger},
+            )
+        return self._request(
+            "PUT",
+            f"/v1/knowledge/{note_id}",
+            json={"name": name, "body": body, "trigger_description": trigger},
+        )
+
     def health(self) -> dict:
         """Cheap authenticated call used by /healthz and the UI provider badge."""
         if self.flavor == "v3":

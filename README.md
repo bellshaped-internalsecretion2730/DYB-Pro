@@ -27,6 +27,11 @@ open http://localhost:3000
 
 Three clicks: **Load demo project** → **Run design cycle** → **Export wet-lab shortlist**.
 
+**Pharmakon** builds a drug-discovery program on top of that history — small-molecule commits, a
+staged gate ladder with autonomy levels and human signatures, wet-lab experiment proposals, assay
+ingestion, prediction drift and a draft IND-style dossier. See [PHARMAKON.md](PHARMAKON.md), and
+read its "what the numbers are — and are not" section before trusting any prediction.
+
 See [DEMO.md](DEMO.md) for the narrated script, [REQUIREMENTS.md](REQUIREMENTS.md) for scope,
 [ARCHITECTURE.md](ARCHITECTURE.md) for the system design and
 [DEVIN_INTEGRATION.md](DEVIN_INTEGRATION.md) for exactly how the Devin API is used.
@@ -44,6 +49,7 @@ See [DEMO.md](DEMO.md) for the narrated script, [REQUIREMENTS.md](REQUIREMENTS.m
 | Celery experiment queue with logs + retries | `backend/app/worker.py` |
 | Seeded demo project (GB1 + IgG1 CH3) | `backend/app/seed.py` |
 | Backend tests | `backend/tests` |
+| Pharmakon: programs, gates, molecules, dossier | `backend/app/pharma`, `backend/app/chem`, `frontend/app/pharmakon` |
 
 ## Modes
 
@@ -121,6 +127,18 @@ the product refuses to dress them up:
   `GET /api/projects/{id}/calibration`.
 * The daemon researches and re-estimates drift; it does not itself propose or commit designs, and
   its drift numbers are the same small-sample calibration reported above.
+
+## Private previews and public structure tools
+
+The web app uses a same-origin `/api/dyb-pro` proxy by default. The browser only sends an API
+key when a scientist explicitly enters an override; the server-side `DYB_PRO_API_KEY` is kept
+out of the browser bundle. Set `NEXT_PUBLIC_API_BASE` only for legacy direct-to-backend
+development. For private previews, set both `APP_BASIC_AUTH_USER` and
+`APP_BASIC_AUTH_PASSWORD` to enable the optional HTTP Basic-auth gate.
+
+The workspace also includes an honest-provenance search panel for public RCSB PDB, NIH PubChem
+and EMBL-EBI ChEMBL APIs. A structure viewer renders the selected project's head commit when a
+PDB structure is available, with a raw-PDB download fallback when it is not.
 
 Licensed under the repository's LICENSE. No proprietary third-party code, UI, text or data is
 used; all scoring methods are re-implemented from published, cited literature and are documented

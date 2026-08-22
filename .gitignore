@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+.venv*/
 venv/
 .pytest_cache/
 .ruff_cache/
@@ -20,6 +21,7 @@ next-env.d.ts
 *.sqlite3
 *.db
 artifacts/
+artifacts*/
 data/
 
 # os / editors

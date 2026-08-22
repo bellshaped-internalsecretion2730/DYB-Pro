@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.pharma_routes import router as pharma_router
 from app.api.schemas import (
     AgentRunOut,
     AutonomyDecisionOut,
@@ -58,7 +59,17 @@ from app.security import (
     require_role,
     usage_snapshot,
 )
-from app.services import autonomy, calibration, economics, ingest, learning, problem, research, wetlab
+from app.services import (
+    autonomy,
+    calibration,
+    databases,
+    economics,
+    ingest,
+    learning,
+    problem,
+    research,
+    wetlab,
+)
 from app.storage import store
 from app.toolkit import sequence as seqlib
 from app.versioning import (
@@ -74,12 +85,27 @@ from app.worker import cancel_cycle_task, enqueue_cycle, enqueue_research_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+router.include_router(pharma_router)
 
 viewer = Depends(require_role("viewer"))
 scientist = Depends(require_role("scientist"))
 
 
 # --------------------------------------------------------------------- system
+
+
+@router.get("/databases/search", tags=["databases"])
+def database_search(
+    source: str,
+    query: str,
+    user: User = viewer,
+) -> dict:
+    try:
+        return databases.search(source, query)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except databases.DatabaseSearchError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
 
 @router.get("/healthz", tags=["system"])

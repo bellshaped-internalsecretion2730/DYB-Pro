@@ -7,17 +7,8 @@ with the same DYB Pro slug already exists it is reused, otherwise it is created.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-SLUG_PREFIX = "dyb-pro"
-
-
-@dataclass(frozen=True)
-class PlaybookSpec:
-    slug: str
-    title: str
-    body: str
-
+from app.devin.pharma_playbooks import PHARMA_PLAYBOOKS, PROGRAM_ORCHESTRATOR, all_pharma_specs
+from app.devin.playbook_spec import SLUG_PREFIX, PlaybookSpec
 
 ORCHESTRATOR = PlaybookSpec(
     slug=f"{SLUG_PREFIX}-orchestrator",
@@ -177,10 +168,14 @@ You triage the pooled candidate set into a wet-lab shortlist rationale.
 
 
 def all_specs() -> list[PlaybookSpec]:
-    return [ORCHESTRATOR, *ROLE_PLAYBOOKS.values()]
+    return [ORCHESTRATOR, *ROLE_PLAYBOOKS.values(), *all_pharma_specs()]
 
 
 def spec_for(role: str) -> PlaybookSpec:
     if role == "orchestrator":
         return ORCHESTRATOR
-    return ROLE_PLAYBOOKS[role]
+    if role == "program":
+        return PROGRAM_ORCHESTRATOR
+    if role in ROLE_PLAYBOOKS:
+        return ROLE_PLAYBOOKS[role]
+    return PHARMA_PLAYBOOKS[role]
