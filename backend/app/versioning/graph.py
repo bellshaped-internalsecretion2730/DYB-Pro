@@ -314,7 +314,7 @@ def merge_branches(
             f"{(base_id or 'root')[:12]}. Scores are parent averages and must be re-evaluated."
         ),
         agent_role="version-control",
-        provider="foldsmith",
+        provider="dyb-pro",
         citations=["merge of two design branches; scores require re-evaluation"],
     )
 

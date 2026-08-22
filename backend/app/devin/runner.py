@@ -75,7 +75,7 @@ def provider_status(settings: Settings | None = None) -> dict:
 
 
 def reconcile_playbooks(db: Session, client: DevinClient | None = None) -> dict[str, str]:
-    """Reuse Foldsmith playbooks that already exist in the org; create the missing ones."""
+    """Reuse DYB Pro playbooks that already exist in the org; create the missing ones."""
     settings = get_settings()
     if not settings.devin_enabled:
         return {}
@@ -333,7 +333,7 @@ class AgentSupervisor:
                             prompt=run.prompt,
                             schema=schema_for(run.role),
                             acu_limit=run.acu_limit,
-                            title=f"Foldsmith {run.role} retry",
+                            title=f"DYB Pro {run.role} retry",
                         ),
                         self.cycle.orchestrator_session_id,
                     )

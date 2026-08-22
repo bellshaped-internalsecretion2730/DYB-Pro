@@ -1,7 +1,7 @@
-# Foldsmith — a pre-wetlab protein design OS
+# DYB Pro — a pre-wetlab protein design OS
 
-Foldsmith is a workspace for protein-design scientists. You type a research goal, drop in
-sequences/structures, and Foldsmith runs an autonomous in-silico design cycle that ends in a
+DYB Pro is a workspace for protein-design scientists. You type a research goal, drop in
+sequences/structures, and DYB Pro runs an autonomous in-silico design cycle that ends in a
 **ranked, ready-to-order wet-lab shortlist** plus a **git-like version history** of every design
 it ever proposed.
 
@@ -47,7 +47,7 @@ See [DEMO.md](DEMO.md) for the narrated script, [REQUIREMENTS.md](REQUIREMENTS.m
 
 ## Modes
 
-Foldsmith never pretends to be Devin. The execution provider of every agent run is recorded and
+DYB Pro never pretends to be Devin. The execution provider of every agent run is recorded and
 displayed:
 
 * `devin` — real Devin sessions (requires `DEVIN_API_KEY`). Orchestrator + children, tags,
