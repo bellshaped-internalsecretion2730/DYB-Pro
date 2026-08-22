@@ -538,7 +538,7 @@ def export_cycle(
     pack = (cycle.shortlist or {}).get("pack")
     if not pack:
         raise HTTPException(status.HTTP_409_CONFLICT, f"cycle is '{cycle.status}', nothing to export")
-    stem = f"foldsmith-{cycle.id[:8]}-round{cycle.round}"
+    stem = f"dyb-pro-{cycle.id[:8]}-round{cycle.round}"
     if fmt == "json":
         return Response(
             content=json.dumps(cycle.shortlist, indent=2, default=str),
@@ -566,7 +566,7 @@ def export_project_graph(
     return Response(
         content=json.dumps(graph, indent=2, default=str),
         media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="foldsmith-graph-{project_id[:8]}.json"'},
+        headers={"Content-Disposition": f'attachment; filename="dyb-pro-graph-{project_id[:8]}.json"'},
     )
 
 
@@ -592,7 +592,7 @@ def export_project_fasta(
     ]
     return PlainTextResponse(
         seqlib.to_fasta(records),
-        headers={"Content-Disposition": f'attachment; filename="foldsmith-{project_id[:8]}.fasta"'},
+        headers={"Content-Disposition": f'attachment; filename="dyb-pro-{project_id[:8]}.fasta"'},
     )
 
 

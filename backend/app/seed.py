@@ -45,9 +45,9 @@ DEMO_BRIEF = (
 def seed_users(db: Session) -> list[User]:
     settings = get_settings()
     spec = [
-        ("admin@foldsmith.demo", "Demo Admin", "admin", settings.seed_admin_api_key),
-        ("scientist@foldsmith.demo", "Demo Scientist", "scientist", settings.seed_scientist_api_key),
-        ("viewer@foldsmith.demo", "Demo Viewer", "viewer", settings.seed_viewer_api_key),
+        ("admin@dybpro.demo", "Demo Admin", "admin", settings.seed_admin_api_key),
+        ("scientist@dybpro.demo", "Demo Scientist", "scientist", settings.seed_scientist_api_key),
+        ("viewer@dybpro.demo", "Demo Viewer", "viewer", settings.seed_viewer_api_key),
     ]
     users: list[User] = []
     for email, name, role, api_key in spec:

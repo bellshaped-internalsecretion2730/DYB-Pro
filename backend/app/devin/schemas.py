@@ -1,7 +1,7 @@
 """JSON Schemas for structured handoff between the orchestrator and child agents.
 
 These are passed to the Devin API as `structured_output_schema`, so every agent returns
-machine-readable results that Foldsmith can validate, score and commit.
+machine-readable results that DYB Pro can validate, score and commit.
 """
 
 from __future__ import annotations

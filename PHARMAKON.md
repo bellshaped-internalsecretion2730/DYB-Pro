@@ -1,6 +1,6 @@
 # Pharmakon — the autonomous drug-discovery layer
 
-Foldsmith versions proteins. **Pharmakon** runs *programs*: a target, a molecule portfolio, a
+DYB Pro versions proteins. **Pharmakon** runs *programs*: a target, a molecule portfolio, a
 stage ladder with hard decision gates, wet-lab experiments it asks for, results it ingests, and a
 draft IND-style dossier at the end. Devin is the research runtime — an orchestrator session fans
 out to role-specialised children — but Devin never decides anything: agents supply numbers and

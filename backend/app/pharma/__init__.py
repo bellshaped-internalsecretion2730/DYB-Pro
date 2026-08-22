@@ -1,4 +1,4 @@
-"""Pharmakon: the autonomous drug-discovery program layer on top of Foldsmith.
+"""Pharmakon: the autonomous drug-discovery program layer on top of DYB Pro.
 
 Pure decision logic only — no database, no network, no agent calls. Everything in this package
 is deterministic and replayable from stored evidence, which is what makes a gate decision

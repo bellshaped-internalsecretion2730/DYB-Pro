@@ -5,7 +5,7 @@ Supports both API flavors:
     ``cog_`` service-account keys. This is the default.
   * ``v1`` — personal-key endpoints (``/v1/sessions``).
 
-Everything Foldsmith needs is here: create sessions with playbooks/tags/ACU limits/structured
+Everything DYB Pro needs is here: create sessions with playbooks/tags/ACU limits/structured
 output schemas, poll status + structured output + ACU consumption, send follow-up messages, list
 child sessions, cancel (archive) sessions, and reconcile playbooks.
 """

@@ -98,7 +98,7 @@ def program_orchestrator_prompt(
 ) -> str:
     return f"""\
 You are the orchestrator of one round of an autonomous small-molecule drug-discovery program
-running on the Foldsmith/Pharmakon platform. You plan the round and fan out to specialist child
+running on the DYB Pro/Pharmakon platform. You plan the round and fan out to specialist child
 agents. You do not modify code and you do not decide the gate: after your children report, the
 gate is evaluated deterministically from the recorded evidence.
 

@@ -143,7 +143,7 @@ export default function PharmakonBoard() {
         </div>
         <ProviderBadge provider={provider} />
         <div className="grow" />
-        <Link href="/">← Foldsmith protein workspace</Link>
+        <Link href="/">← DYB Pro protein workspace</Link>
         <input
           type="text"
           style={{ width: 220 }}

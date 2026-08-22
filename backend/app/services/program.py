@@ -1,6 +1,6 @@
 """The Pharmakon program engine: one autonomous round of a drug-discovery program.
 
-A round is the small-molecule analogue of Foldsmith's design cycle, but it ends in a *decision*
+A round is the small-molecule analogue of DYB Pro's design cycle, but it ends in a *decision*
 rather than a shortlist:
 
     plan -> fan out to pharma specialists -> commit molecules -> score portfolio

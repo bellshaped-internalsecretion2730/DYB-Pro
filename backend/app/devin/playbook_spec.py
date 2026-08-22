@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-SLUG_PREFIX = "foldsmith"
+SLUG_PREFIX = "dyb-pro"
 
 
 @dataclass(frozen=True)
