@@ -12,11 +12,11 @@ function constantTimeEqual(left: string, right: string): boolean {
 export function middleware(request: NextRequest) {
   const username = process.env.APP_BASIC_AUTH_USER;
   const password = process.env.APP_BASIC_AUTH_PASSWORD;
-  const headers = new Headers({ "Cache-Control": "private, no-store" });
-
   if (!username || !password) {
-    return NextResponse.next({ headers });
+    return NextResponse.next();
   }
+
+  const headers = new Headers({ "Cache-Control": "private, no-store" });
 
   const authorization = request.headers.get("authorization") || "";
   const encoded = authorization.startsWith("Basic ") ? authorization.slice(6) : "";

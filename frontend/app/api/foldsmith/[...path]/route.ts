@@ -11,7 +11,7 @@ async function handleRequest(
   context: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await context.params;
-  if (!path.every((segment) => SEGMENT.test(segment))) {
+  if (!path.length || !path.every((segment) => SEGMENT.test(segment))) {
     return Response.json({ detail: "invalid path" }, { status: 400, headers: noStore() });
   }
   if (!ALLOWED_METHODS.has(request.method)) {
