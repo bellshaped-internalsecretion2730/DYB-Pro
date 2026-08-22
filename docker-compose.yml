@@ -1,12 +1,12 @@
-name: foldsmith
+name: dyb-pro
 
 x-backend-env: &backend-env
-  DATABASE_URL: postgresql+psycopg://foldsmith:foldsmith@db:5432/foldsmith
+  DATABASE_URL: postgresql+psycopg://dybpro:dybpro@db:5432/dybpro
   REDIS_URL: redis://redis:6379/0
   S3_ENDPOINT_URL: http://objectstore:9000
-  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-foldsmith}
-  S3_SECRET_KEY: ${S3_SECRET_KEY:-foldsmith123}
-  S3_BUCKET: ${S3_BUCKET:-foldsmith}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-dybpro}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-dybpro123}
+  S3_BUCKET: ${S3_BUCKET:-dybpro}
   LOCAL_ARTIFACT_DIR: /data/artifacts
   APP_ENV: ${APP_ENV:-demo}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -20,24 +20,29 @@ x-backend-env: &backend-env
   DEVIN_POLL_INTERVAL_SECONDS: ${DEVIN_POLL_INTERVAL_SECONDS:-10}
   DEVIN_SESSION_TIMEOUT_SECONDS: ${DEVIN_SESSION_TIMEOUT_SECONDS:-1800}
   ALLOW_LOCAL_SIMULATION: ${ALLOW_LOCAL_SIMULATION:-true}
+  RESEARCH_DAEMON_ENABLED: ${RESEARCH_DAEMON_ENABLED:-true}
+  RESEARCH_DEBOUNCE_SECONDS: ${RESEARCH_DEBOUNCE_SECONDS:-5}
+  RESEARCH_TICK_SECONDS: ${RESEARCH_TICK_SECONDS:-15}
+  RESEARCH_ACU_LIMIT: ${RESEARCH_ACU_LIMIT:-3}
+  RESEARCH_MAX_TOPICS_PER_EVENT: ${RESEARCH_MAX_TOPICS_PER_EVENT:-4}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
-  SEED_ADMIN_API_KEY: ${SEED_ADMIN_API_KEY:-foldsmith-demo-admin}
-  SEED_SCIENTIST_API_KEY: ${SEED_SCIENTIST_API_KEY:-foldsmith-demo-scientist}
-  SEED_VIEWER_API_KEY: ${SEED_VIEWER_API_KEY:-foldsmith-demo-viewer}
+  SEED_ADMIN_API_KEY: ${SEED_ADMIN_API_KEY:-dyb-pro-demo-admin}
+  SEED_SCIENTIST_API_KEY: ${SEED_SCIENTIST_API_KEY:-dyb-pro-demo-scientist}
+  SEED_VIEWER_API_KEY: ${SEED_VIEWER_API_KEY:-dyb-pro-demo-viewer}
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
 
 services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: foldsmith
-      POSTGRES_PASSWORD: foldsmith
-      POSTGRES_DB: foldsmith
+      POSTGRES_USER: dybpro
+      POSTGRES_PASSWORD: dybpro
+      POSTGRES_DB: dybpro
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U foldsmith"]
+      test: ["CMD-SHELL", "pg_isready -U dybpro"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -54,8 +59,8 @@ services:
     image: minio/minio:RELEASE.2024-10-13T13-34-11Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-foldsmith}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-foldsmith123}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-dybpro}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-dybpro123}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -89,7 +94,19 @@ services:
 
   worker:
     build: ./backend
-    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=2", "-Q", "celery"]
+    environment: *backend-env
+    volumes:
+      - artifacts:/data/artifacts
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # The research daemon: its own worker and its own beat, so it keeps reacting to changes while a
+  # design cycle occupies the cycle worker for half an hour.
+  research:
+    build: ./backend
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--beat", "--loglevel=INFO", "--concurrency=1", "-Q", "research"]
     environment: *backend-env
     volumes:
       - artifacts:/data/artifacts
@@ -102,10 +119,10 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
-        NEXT_PUBLIC_DEMO_API_KEY: ${NEXT_PUBLIC_DEMO_API_KEY:-foldsmith-demo-scientist}
+        NEXT_PUBLIC_DEMO_API_KEY: ${NEXT_PUBLIC_DEMO_API_KEY:-dyb-pro-demo-scientist}
     environment:
       NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
-      NEXT_PUBLIC_DEMO_API_KEY: ${NEXT_PUBLIC_DEMO_API_KEY:-foldsmith-demo-scientist}
+      NEXT_PUBLIC_DEMO_API_KEY: ${NEXT_PUBLIC_DEMO_API_KEY:-dyb-pro-demo-scientist}
     ports:
       - "3000:3000"
     depends_on:

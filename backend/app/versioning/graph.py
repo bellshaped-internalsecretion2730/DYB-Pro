@@ -337,7 +337,7 @@ def merge_branches(
             f"do not carry over."
         ),
         agent_role="version-control",
-        provider="foldsmith",
+        provider="dyb-pro",
         citations=["merge of two design branches; scores require re-evaluation"],
     )
 

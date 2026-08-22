@@ -1,4 +1,4 @@
-"""Foldsmith API entrypoint."""
+"""DYB Pro API entrypoint."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DESCRIPTION = """\
-Foldsmith is a pre-wetlab protein design OS. A scientist states a goal, drops sequences or
+DYB Pro is a pre-wetlab protein design OS. A scientist states a goal, drops sequences or
 structures, and an autonomous Devin agent swarm runs in-silico design cycles. Every design is an
 immutable commit in a version graph, and every cycle ends in a ranked, orderable wet-lab shortlist
 with cost and risk against testing everything.
@@ -36,12 +36,12 @@ async def lifespan(app: FastAPI):
         from app.seed import seed_all
 
         seed_all(db)
-    logger.info("foldsmith api ready (env=%s)", settings.app_env)
+    logger.info("dyb-pro api ready (env=%s)", settings.app_env)
     yield
 
 
 app = FastAPI(
-    title="Foldsmith API",
+    title="DYB Pro API",
     version="0.1.0",
     description=DESCRIPTION,
     lifespan=lifespan,
@@ -58,4 +58,4 @@ app.include_router(router, prefix="/api")
 
 @app.get("/", include_in_schema=False)
 def root() -> dict:
-    return {"service": "foldsmith", "docs": "/docs", "api": "/api"}
+    return {"service": "dyb-pro", "docs": "/docs", "api": "/api"}

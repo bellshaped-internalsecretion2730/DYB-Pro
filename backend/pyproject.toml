@@ -1,7 +1,7 @@
 [project]
-name = "foldsmith-backend"
+name = "dyb-pro-backend"
 version = "0.1.0"
-description = "Foldsmith — pre-wetlab protein design OS backend"
+description = "DYB Pro — pre-wetlab protein design OS backend"
 requires-python = ">=3.11"
 
 [tool.ruff]

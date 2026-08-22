@@ -78,12 +78,12 @@ def mutagenesis_primers(
     parent_dna: str,
     mutation: dict,
     flank: int = 15,
-    template_source: str = "foldsmith-generated ORF",
+    template_source: str = "dyb-pro-generated ORF",
 ) -> dict:
     """QuikChange-style complementary primer pair centred on the mutated codon.
 
     `parent_dna` must be the template that will actually be in the mutagenesis reaction. When it is
-    a Foldsmith back-translated ORF rather than the user's plasmid, the primers cannot anneal to
+    a DYB Pro back-translated ORF rather than the user's plasmid, the primers cannot anneal to
     their plasmid at all -- the codons are ours, not theirs -- so `orderable` stays False and the
     pair is a design template to regenerate against the real sequence.
     """
@@ -195,13 +195,13 @@ def build_pack(
     """Assemble the wet-lab pack for the top-N ranked candidates.
 
     `template_dna` is the user's actual plasmid/template sequence. Without it, primers are designed
-    against a Foldsmith-generated ORF and are marked as not orderable.
+    against a DYB Pro-generated ORF and are marked as not orderable.
 
     Filter recall is unmeasured across this field, so rejected designs are the only source of a
     future false-negative estimate; recall probes are therefore kept separate from hit planning.
     """
     template_source = (
-        "user-supplied template" if template_dna else "foldsmith-generated ORF"
+        "user-supplied template" if template_dna else "dyb-pro-generated ORF"
     )
     parent_dna = template_dna or seqlib.back_translate(parent_sequence)
     if tier not in TIERS:

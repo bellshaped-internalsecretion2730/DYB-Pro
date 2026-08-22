@@ -3,15 +3,15 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://localhost:8000";
 
-const DEFAULT_KEY = process.env.NEXT_PUBLIC_DEMO_API_KEY || "foldsmith-demo-scientist";
+const DEFAULT_KEY = process.env.NEXT_PUBLIC_DEMO_API_KEY || "dyb-pro-demo-scientist";
 
 export function apiKey(): string {
   if (typeof window === "undefined") return DEFAULT_KEY;
-  return window.localStorage.getItem("foldsmith.apiKey") || DEFAULT_KEY;
+  return window.localStorage.getItem("dyb-pro.apiKey") || DEFAULT_KEY;
 }
 
 export function setApiKey(key: string) {
-  window.localStorage.setItem("foldsmith.apiKey", key);
+  window.localStorage.setItem("dyb-pro.apiKey", key);
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -211,6 +211,70 @@ export type Shortlist = {
   ranked: RankedCandidate[];
   narrative: { headline: string; body?: string; source?: string };
   commits: { label: string; commit: string }[];
+};
+
+export type ResearchFinding = {
+  topic_key: string;
+  topic: string;
+  from_cache: boolean;
+  provider: string;
+  findings: { claim?: string; citation?: string; implication?: string }[];
+};
+
+export type ResearchEvent = {
+  id: string;
+  project_id: string;
+  status: "queued" | "running" | "done" | "failed";
+  trigger: string;
+  triggers: { trigger: string; ref?: string | null; detail?: string; at: string }[];
+  coalesced: number;
+  summary: string;
+  changed: Record<string, unknown>;
+  findings: ResearchFinding[];
+  metrics: Record<string, unknown>;
+  drift: Record<string, unknown>;
+  cache_hits: number;
+  cache_writes: number;
+  provider: string;
+  devin_session_url?: string | null;
+  acus: number;
+  error?: string | null;
+  created_at: string;
+  finished_at?: string | null;
+};
+
+export type ResearchNote = {
+  id: string;
+  topic_key: string;
+  topic: string;
+  question: string;
+  findings: { claim?: string; citation?: string; implication?: string }[];
+  citations: string[];
+  provider: string;
+  devin_session_url?: string | null;
+  reuse_count: number;
+  created_at: string;
+  last_used_at: string;
+};
+
+export type DaemonStatus = {
+  enabled: boolean;
+  provider: string | null;
+  debounce_seconds: number;
+  tick_seconds: number;
+  queued: number;
+  running: number;
+  failed: number;
+  last_event_at?: string | null;
+  cached_topics: number;
+};
+
+export type ProjectResearch = {
+  daemon: DaemonStatus;
+  session: { session_url?: string | null; status: string; messages_sent: number } | null;
+  events: ResearchEvent[];
+  notes: ResearchNote[];
+  cache: { topics: number; reuses: number; note: string };
 };
 
 export type Observation = {

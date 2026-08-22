@@ -18,7 +18,7 @@ from app.devin import prompts as promptlib
 from app.devin.runner import PROVIDER_DEVIN, AgentSupervisor, LaunchSpec
 from app.devin.schemas import PLAN_SCHEMA, ROLES, schema_for
 from app.models import AgentRun, Artifact, DesignCycle, Observation, Project, ProteinCommit, utcnow
-from app.services import analysis, calibration, learning, ranking, wetlab
+from app.services import analysis, calibration, learning, ranking, research, wetlab
 from app.services.evaluation import Candidate, Evaluation, evaluate_all
 from app.storage import store
 from app.toolkit import developability as dev
@@ -82,7 +82,7 @@ def build_evidence(
             "geometry_usable": structlib.geometry_usable(model),
         },
         "notes": [
-            "All values are deterministic in-silico proxies from Foldsmith's open toolkit.",
+            "All values are deterministic in-silico proxies from DYB Pro's open toolkit.",
             "Coarse models are not experimental structures; burial, contacts and docking read off "
             "a generated CA trace describe the model, not the protein.",
             "No score here is calibrated against measurements: use them to order candidates, not "
@@ -306,7 +306,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                 prompt=plan_prompt,
                 schema=PLAN_SCHEMA,
                 acu_limit=settings.devin_orchestrator_acu_limit,
-                title=f"Foldsmith orchestrator — {project.name} round {cycle.round}",
+                title=f"DYB Pro orchestrator — {project.name} round {cycle.round}",
             ),
             simulation_kwargs={
                 "brief": cycle.brief,
@@ -379,7 +379,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                         prompt=prompt,
                         schema=schema_for(role),
                         acu_limit=int(agent.get("acu_limit") or settings.devin_child_acu_limit),
-                        title=f"Foldsmith {role} agent — {project.name} r{cycle.round}",
+                        title=f"DYB Pro {role} agent — {project.name} r{cycle.round}",
                     ),
                     parent_session_id=cycle.orchestrator_session_id,
                     simulation_kwargs={
@@ -476,7 +476,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                     ),
                     schema=schema_for("ranking"),
                     acu_limit=settings.devin_child_acu_limit,
-                    title=f"Foldsmith ranking agent — {project.name} r{cycle.round}",
+                    title=f"DYB Pro ranking agent — {project.name} r{cycle.round}",
                 ),
                 parent_session_id=cycle.orchestrator_session_id,
                 simulation_kwargs={"candidates": summary_rows, "shortlist_size": shortlist_size},
@@ -628,6 +628,15 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                 "economics": pack.get("economics"),
                 "narrative": narrative,
             },
+        )
+        # The daemon is told what happened rather than run here: a cycle that commits thirteen
+        # designs must produce one coalesced research event, on the daemon's own worker.
+        research.enqueue(
+            db,
+            project.id,
+            "cycle",
+            ref=cycle.id,
+            detail=f"round {cycle.round}: {len(commits)} commit(s), {len(passing)} passing",
         )
         db.commit()
         return cycle

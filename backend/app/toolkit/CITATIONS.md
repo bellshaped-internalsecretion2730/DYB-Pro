@@ -1,6 +1,6 @@
 # Methods and citations
 
-Every score Foldsmith reports is an independent implementation of a published method. Nothing in
+Every score DYB Pro reports is an independent implementation of a published method. Nothing in
 this directory is derived from proprietary software, data or documentation.
 
 | Module | Quantity | Method / source |

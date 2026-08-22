@@ -1,7 +1,7 @@
-# Foldsmith — a pre-wetlab protein design OS
+# DYB Pro — a pre-wetlab protein design OS
 
-Foldsmith is a workspace for protein-design scientists. You type a research goal, drop in
-sequences/structures, and Foldsmith runs an autonomous in-silico design cycle that ends in a
+DYB Pro is a workspace for protein-design scientists. You type a research goal, drop in
+sequences/structures, and DYB Pro runs an autonomous in-silico design cycle that ends in a
 **ranked, ready-to-order wet-lab shortlist** plus a **git-like version history** of every design
 it ever proposed.
 
@@ -47,7 +47,7 @@ See [DEMO.md](DEMO.md) for the narrated script, [REQUIREMENTS.md](REQUIREMENTS.m
 
 ## Modes
 
-Foldsmith never pretends to be Devin. The execution provider of every agent run is recorded and
+DYB Pro never pretends to be Devin. The execution provider of every agent run is recorded and
 displayed:
 
 * `devin` — real Devin sessions (requires `DEVIN_API_KEY`). Orchestrator + children, tags,
@@ -69,13 +69,39 @@ uvicorn app.main:app --reload
 cd frontend && npm install && npm run typecheck && npm run build
 ```
 
-The compose stack runs Postgres, Redis, MinIO, the API, a Celery worker and the Next.js web app.
-Running the API alone falls back to SQLite, local artifact storage and inline (eager) cycle
-execution, so nothing extra is required for development.
+The compose stack runs Postgres, Redis, MinIO, the API, a Celery worker for design cycles, a
+separate worker + beat for the research daemon, and the Next.js web app. Running the API alone
+falls back to SQLite, local artifact storage and inline (eager) execution, so nothing extra is
+required for development.
 
-## What Foldsmith does not know
+## The research daemon
 
-Every in-silico number in Foldsmith is an **uncalibrated proxy**, reported in arbitrary units, and
+Design cycles run on request; research runs continuously. Anything that changes a project — an
+upload, a committed design, an ingested measurement, or `POST /api/projects/{id}/research` — writes
+a durable `queued` research event. A dedicated worker (`research` queue, its own beat tick) picks
+it up, diffs the project against the last completed event, reuses cached research, researches only
+what is new, recomputes the toolkit metrics on the current head and re-estimates drift.
+
+* **No trigger is dropped, and no trigger fans out.** Triggers arriving while an event is still
+  queued are merged into it (`triggers`, `coalesced`), so a cycle that commits thirteen designs
+  produces one research event, and an event survives a worker restart because it lives in the
+  database rather than in a subscription.
+* **The cache is append-only.** Research is keyed by topic (`mutation:T25V`, `liability:N-glyc`,
+  `drift:stability`), so a question answered for v2 is reused for v9 — visible as `cache_hits`,
+  `cache_writes` and per-note `reuse_count`. Notes are never deleted or overwritten.
+* **One session per project, not per change.** With `DEVIN_API_KEY` set, the daemon keeps its own
+  long-lived Devin session per project and messages it. Without one it runs the labelled
+  `local-simulation` provider, which restates published heuristics and searches nothing — the
+  provider is recorded on every event and note, so a simulated finding can never be mistaken for a
+  literature search.
+* Failed events stay in the list as `failed` with their error, rather than disappearing.
+
+Tune with `RESEARCH_DAEMON_ENABLED`, `RESEARCH_DEBOUNCE_SECONDS`, `RESEARCH_TICK_SECONDS`,
+`RESEARCH_ACU_LIMIT` and `RESEARCH_MAX_TOPICS_PER_EVENT`.
+
+## What DYB Pro does not know
+
+Every in-silico number in DYB Pro is an **uncalibrated proxy**, reported in arbitrary units, and
 the product refuses to dress them up:
 
 * Folded structures are **coarse CA-only models** (`model:` provenance), not experimental
@@ -93,9 +119,8 @@ the product refuses to dress them up:
   results (`POST /api/projects/{id}/results` or a results CSV), and stay per-project and
   small-sample. Measurements never overwrite a commit's scores; drift stays inspectable at
   `GET /api/projects/{id}/calibration`.
-
-Not yet built: the always-live research daemon (cached-literature reuse, debounced research events
-per diff) described in `REQUIREMENTS.md`. Research currently runs inside a design cycle only.
+* The daemon researches and re-estimates drift; it does not itself propose or commit designs, and
+  its drift numbers are the same small-sample calibration reported above.
 
 Licensed under the repository's LICENSE. No proprietary third-party code, UI, text or data is
 used; all scoring methods are re-implemented from published, cited literature and are documented

@@ -1,7 +1,7 @@
 # Devin integration
 
-Foldsmith treats Devin as the **research supervisor**, not as a chat sidebar. Every design cycle is
-one orchestrator session that fans out to specialized child sessions, and every artifact Foldsmith
+DYB Pro treats Devin as the **research supervisor**, not as a chat sidebar. Every design cycle is
+one orchestrator session that fans out to specialized child sessions, and every artifact DYB Pro
 stores carries the session that produced it.
 
 Implementation: [`backend/app/devin/`](backend/app/devin) —
@@ -56,7 +56,7 @@ orchestrator (1 session, ACU limit DEVIN_ORCHESTRATOR_ACU_LIMIT)
 ```
 
 The orchestrator receives the brief, the deterministic evidence pack for the parent design and the
-history digest, and must return a **plan**: strategy plus the child agents to spawn. Foldsmith then
+history digest, and must return a **plan**: strategy plus the child agents to spawn. DYB Pro then
 launches exactly those children as separate sessions parented to the orchestrator.
 
 ## 4. Playbooks, tags, ACU limits, structured output
@@ -64,8 +64,8 @@ launches exactly those children as separate sessions parented to the orchestrato
 * **Playbooks** — one per role in `playbooks.py`. On the first cycle the runner reconciles them with
   the org (`list` → `create` if missing) and caches the ids in `playbook_refs`, so child sessions are
   started with a stable, reviewable procedure rather than an ad-hoc prompt.
-* **Tags** — every session is tagged `foldsmith`, `foldsmith:role:<role>`,
-  `foldsmith:project:<id>`, `foldsmith:cycle:<id>`, `foldsmith:round:<n>`, which makes a whole design
+* **Tags** — every session is tagged `dyb-pro`, `dyb-pro:role:<role>`,
+  `dyb-pro:project:<id>`, `dyb-pro:cycle:<id>`, `dyb-pro:round:<n>`, which makes a whole design
   round filterable in the Devin UI.
 * **ACU limits** — the orchestrator and each child get explicit ceilings
   (`DEVIN_ORCHESTRATOR_ACU_LIMIT`, `DEVIN_CHILD_ACU_LIMIT`) and consumed ACUs are recorded per run

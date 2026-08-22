@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-TAG_PREFIX = "foldsmith"
+TAG_PREFIX = "dyb-pro"
 
 
 def tags_for(project_id: str, cycle_id: str, round_: int, role: str) -> list[str]:
@@ -36,7 +36,7 @@ def orchestrator_prompt(
     shortlist_size: int,
 ) -> str:
     return f"""\
-You are the orchestrator of one in-silico protein design cycle for Foldsmith, a pre-wetlab design
+You are the orchestrator of one in-silico protein design cycle for DYB Pro, a pre-wetlab design
 platform. You plan the cycle and fan out to specialized child agents. You do not modify any code.
 
 # Research goal (project)
@@ -52,7 +52,7 @@ length: {parent.get("length")} residues
 sequence:
 {parent.get("sequence")}
 
-# Deterministic in-silico evidence for the parent (computed by Foldsmith's toolkit)
+# Deterministic in-silico evidence for the parent (computed by DYB Pro's toolkit)
 {_evidence_block(evidence)}
 
 # Project history and what has already been learned
@@ -83,7 +83,7 @@ def child_prompt(
     focus = ", ".join(str(r) for r in focus_regions) or "none specified"
     avoid = "; ".join(must_avoid) or "nothing specified beyond the exclusion list"
     return f"""\
-You are the Foldsmith **{role}** agent for one in-silico protein design cycle. Work only on your
+You are the DYB Pro **{role}** agent for one in-silico protein design cycle. Work only on your
 assigned task. Do not modify any code repository.
 
 # Cycle strategy (from the orchestrator)
@@ -107,7 +107,7 @@ length: {parent.get("length")} residues
 sequence:
 {parent.get("sequence")}
 
-# Deterministic in-silico evidence (Foldsmith toolkit output for the parent)
+# Deterministic in-silico evidence (DYB Pro toolkit output for the parent)
 {_evidence_block(evidence)}
 
 # Project history, prior results and exclusion list
@@ -133,7 +133,7 @@ def ranking_prompt(
     shortlist_size: int,
 ) -> str:
     return f"""\
-You are the Foldsmith **ranking** agent. Triage the pooled candidate set into a wet-lab shortlist.
+You are the DYB Pro **ranking** agent. Triage the pooled candidate set into a wet-lab shortlist.
 
 # Scientist's brief
 {brief}

@@ -48,10 +48,10 @@ def test_v3_session_creation_sends_playbook_tags_acu_limit_and_schema():
     client = _client(handler)
     state = client.create_session(
         "design something",
-        title="Foldsmith orchestrator",
+        title="DYB Pro orchestrator",
         playbook_id="playbook-1",
         child_playbook_id="playbook-2",
-        tags=["foldsmith", "role:orchestrator"],
+        tags=["dyb-pro", "role:orchestrator"],
         max_acu_limit=8,
         structured_output_schema={"type": "object"},
         parent_session_id="devin-parent",
@@ -62,7 +62,7 @@ def test_v3_session_creation_sends_playbook_tags_acu_limit_and_schema():
     assert body["playbook_id"] == "playbook-1"
     assert body["child_playbook_id"] == "playbook-2"
     assert body["max_acu_limit"] == 8
-    assert body["tags"] == ["foldsmith", "role:orchestrator"]
+    assert body["tags"] == ["dyb-pro", "role:orchestrator"]
     assert body["structured_output_required"] is True
     assert state.session_id == "devin-abc"
     assert state.status == "running"
@@ -76,7 +76,7 @@ def test_session_state_terminality_and_structured_output():
         "status_detail": "finished",
         "acus_consumed": 3.5,
         "structured_output": {"candidates": [{"label": "d1", "mutations": ["T2K"]}]},
-        "tags": ["foldsmith"],
+        "tags": ["dyb-pro"],
     }
     client = _client(lambda request: httpx.Response(200, json=payload))
     state = client.get_session("devin-abc")
