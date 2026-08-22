@@ -103,6 +103,7 @@ export default function Workspace() {
         const rows = await api.get<Cycle[]>(`/projects/${p.id}/cycles`);
         setCycles(rows);
         if (rows.length > 0) await attachCycle(rows[0]);
+        else setCycle(null);
       } catch (e) {
         fail(e);
       }
