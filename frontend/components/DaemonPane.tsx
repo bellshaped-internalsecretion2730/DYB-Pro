@@ -25,9 +25,25 @@ export default function DaemonPane({
           daemon: {daemon.status}
         </span>
         <span className={`badge ${provider === "devin" ? "devin" : "sim"}`}>{provider}</span>
-        <span className="badge">queue {daemon.queue_depth}</span>
+        <span
+          className="badge tip"
+          data-tip={`${daemon.queue_depth} debounced task(s) waiting · tick every ${daemon.tick_seconds}s · debounce ${daemon.debounce_seconds}s`}
+          tabIndex={0}
+        >
+          queue {daemon.queue_depth}
+        </span>
         <span className="badge">events {daemon.event_sequence}</span>
-        <span className="badge">knowledge v{daemon.knowledge_version}</span>
+        <span
+          className="badge tip"
+          data-tip={
+            daemon.heartbeat_at
+              ? `last heartbeat ${new Date(daemon.heartbeat_at).toLocaleTimeString()}`
+              : "no heartbeat yet"
+          }
+          tabIndex={0}
+        >
+          knowledge v{daemon.knowledge_version}
+        </span>
         {daemon.devin_session_url && (
           <a className="badge devin" href={daemon.devin_session_url} target="_blank" rel="noreferrer">
             supervisor session
@@ -35,9 +51,7 @@ export default function DaemonPane({
         )}
       </div>
       <p className="hint" style={{ marginBottom: 8 }}>
-        {daemon.detail || "watching diffs, labels, new versions and incoming wet-lab results"} · tick{" "}
-        {daemon.tick_seconds}s · debounce {daemon.debounce_seconds}s
-        {daemon.heartbeat_at ? ` · heartbeat ${new Date(daemon.heartbeat_at).toLocaleTimeString()}` : ""}
+        {daemon.detail || "watching diffs, labels, new versions and incoming wet-lab results"}
       </p>
       {degraded && (
         <p className="err">

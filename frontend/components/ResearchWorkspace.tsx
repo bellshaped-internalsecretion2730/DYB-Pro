@@ -127,7 +127,15 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
       )}
 
       <section className="panel wide">
-        <h2>5 · Research Daemon (always on)</h2>
+        <h2>
+          <span
+            className="tip"
+            data-tip="Always-on loop: it watches version diffs, residue labels and incoming wet-lab results, then debounces them into research passes."
+            tabIndex={0}
+          >
+            research daemon
+          </span>
+        </h2>
         <div className="row" style={{ marginBottom: 10 }}>
           <select value={commitId} onChange={(e) => setCommitId(e.target.value)} style={{ maxWidth: 380 }}>
             <option value="">— select version —</option>
@@ -154,9 +162,21 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
             {busy === "seed" ? "seeding campaign…" : "seed demo campaign"}
           </button>
           {overview && (
-            <span className="muted" data-testid="campaign-summary">
-              campaign “{overview.campaign.name}” · {overview.digest.version_count} versions ·{" "}
-              {overview.digest.paper_count} papers · {overview.digest.result_count} result records
+            <span className="kpis" data-testid="campaign-summary">
+              <span className="kpi">
+                <span className="k tip" data-tip={overview.campaign.name} tabIndex={0}>
+                  campaign
+                </span>
+                <span className="v">{overview.digest.version_count} versions</span>
+              </span>
+              <span className="kpi">
+                <span className="k">cached</span>
+                <span className="v">{overview.digest.paper_count} papers</span>
+              </span>
+              <span className="kpi">
+                <span className="k">measured</span>
+                <span className="v">{overview.digest.result_count} results</span>
+              </span>
             </span>
           )}
         </div>
@@ -180,7 +200,15 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
       </section>
 
       <section className="panel">
-        <h2>6 · Label residues</h2>
+        <h2>
+          <span
+            className="tip"
+            data-tip="Residue labels are versioned research objects: saving one wakes the daemon and constrains the next proposal."
+            tabIndex={0}
+          >
+            label residues
+          </span>
+        </h2>
         <LabelStudio
           commit={commit}
           labels={labels}
@@ -197,12 +225,28 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
       </section>
 
       <section className="panel">
-        <h2>7 · Research cache</h2>
+        <h2>
+          <span
+            className="tip"
+            data-tip="Immutable evidence: every daemon event and every paper it cached, with the skills and citations behind them."
+            tabIndex={0}
+          >
+            research cache
+          </span>
+        </h2>
         <ResearchFeed events={overview?.events || []} papers={papers} />
       </section>
 
       <section className="panel">
-        <h2>8 · Wet-lab loop</h2>
+        <h2>
+          <span
+            className="tip"
+            data-tip="Cheapest informative assay pack for this version, then measured results whose residuals recalibrate the model."
+            tabIndex={0}
+          >
+            wet-lab loop
+          </span>
+        </h2>
         <WetlabLoop
           commit={commit}
           risk={risk}
@@ -241,7 +285,15 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
       </section>
 
       <section className="panel">
-        <h2>9 · What we learned v1 → latest</h2>
+        <h2>
+          <span
+            className="tip"
+            data-tip="What the campaign learned from v1 to the latest version, and the next version it would build."
+            tabIndex={0}
+          >
+            learned v1 → latest
+          </span>
+        </h2>
         <LearnedPane
           learned={overview?.learned || null}
           proposal={proposal}

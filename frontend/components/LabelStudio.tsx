@@ -19,14 +19,13 @@ function LabelTree({ nodes, depth = 0 }: { nodes: LabelNode[]; depth?: number })
   return (
     <>
       {nodes.map((n) => (
-        <div key={n.id} style={{ paddingLeft: depth * 14 }}>
+        <div key={n.id} style={{ paddingLeft: depth * 14 }} title={n.note || undefined}>
           <span className="pill" style={{ color: colourFor(n.kind), borderColor: colourFor(n.kind) }}>
             {n.kind}
           </span>{" "}
           <b>{n.name || "(unnamed)"}</b>{" "}
           <span className="mono muted">[{n.residues.join(", ") || "no residues"}]</span>
           {n.superseded ? <span className="muted"> · refined</span> : null}
-          {n.note ? <div className="muted">{n.note}</div> : null}
           {n.refinements.length > 0 && <LabelTree nodes={n.refinements} depth={depth + 1} />}
         </div>
       ))}
@@ -85,10 +84,24 @@ export default function LabelStudio({
 
   return (
     <div>
-      <p className="hint">
-        Click residues in <b>{commit.label}</b> ({commit.sequence.length} aa), then write a label.
-        Labels are versioned research objects — saving one wakes the daemon immediately.
-      </p>
+      <div className="row" style={{ marginBottom: 6 }}>
+        <span
+          className="hint tip"
+          style={{ margin: 0 }}
+          data-tip="Click residues, then write a label. Labels are versioned research objects — saving one wakes the daemon immediately."
+          tabIndex={0}
+        >
+          {commit.label} · {commit.sequence.length} aa
+        </span>
+        <span className="legend">
+          {KINDS.map((k) => (
+            <span key={k.kind} style={{ color: k.hue }}>
+              <i />
+              {k.kind.replace("_", " ")}
+            </span>
+          ))}
+        </span>
+      </div>
       <div className="seqgrid" aria-label="sequence residue selector">
         {commit.sequence.split("").map((aa, idx) => {
           const pos = idx + 1;

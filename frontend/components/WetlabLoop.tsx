@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Commit, RiskReport, WetlabPlan, WetlabResult } from "@/lib/api";
+import MiniBars, { type MiniBar } from "@/components/MiniBars";
 import { fmt } from "@/lib/research";
 
 // Must match the backend host presets in app/services/wetlab_loop.py: an unknown host
@@ -46,12 +47,15 @@ export default function WetlabLoop({
 
   return (
     <div>
-      <p className="hint">
-        Predict → propose the cheapest informative pack → record results (simulator or real) →
-        residuals recalibrate the next proposal. Every metric comes from a tested skill.
-      </p>
-
-      <h3 className="subhead">predicted risk</h3>
+      <h3 className="subhead">
+        <span
+          className="tip"
+          data-tip="Predict, propose the cheapest informative pack, record results (simulator or real); the residuals recalibrate the next proposal. Every metric comes from a tested skill."
+          tabIndex={0}
+        >
+          predicted risk
+        </span>
+      </h3>
       {risk ? (
         <table>
           <thead>
@@ -65,8 +69,9 @@ export default function WetlabLoop({
             {risk.risk.risks.slice(0, 6).map((r) => (
               <tr key={r.risk}>
                 <td>
-                  {r.risk}
-                  <div className="muted">{r.detail}</div>
+                  <span className="tip" data-tip={r.detail} tabIndex={0}>
+                    {r.risk}
+                  </span>
                 </td>
                 <td>
                   <span className={`pill ${r.level === "high" ? "no" : r.level === "low" ? "ok" : ""}`}>
@@ -121,9 +126,28 @@ export default function WetlabLoop({
       {plan && (
         <div style={{ marginTop: 12 }}>
           <h3 className="subhead">
-            pack · ${fmt(plan.total_cost_usd)} · {fmt(plan.information_per_usd, 4)} info/$
+            <span className="tip" data-tip={plan.rationale} tabIndex={0}>
+              proposed pack
+            </span>
           </h3>
-          <p className="muted">{plan.rationale}</p>
+          <div className="kpis">
+            <div className="kpi">
+              <span className="k">cost</span>
+              <span className="v">${fmt(plan.total_cost_usd)}</span>
+            </div>
+            <div className="kpi">
+              <span className="k">info/$</span>
+              <span className="v">{fmt(plan.information_per_usd, 4)}</span>
+            </div>
+            <div className="kpi">
+              <span className="k">assays</span>
+              <span className="v">{plan.assays.length}</span>
+            </div>
+            <div className="kpi">
+              <span className="k">days</span>
+              <span className="v">{Math.max(0, ...plan.assays.map((a) => a.days))}</span>
+            </div>
+          </div>
           <table>
             <thead>
               <tr>
@@ -136,40 +160,32 @@ export default function WetlabLoop({
               {plan.constructs.map((c) => (
                 <tr key={c.label}>
                   <td>
-                    {c.label}
-                    <div className="mono muted">{c.orf.slice(0, 48)}…</div>
+                    <span className="tip mono" data-tip={c.orf} tabIndex={0}>
+                      {c.label}
+                    </span>
                   </td>
                   <td className="muted">
                     {c.vector} · {c.expression_host}
                   </td>
                   <td className="muted">
-                    {c.route} · ${fmt(c.build_cost_usd)}
-                    <div>{c.notes}</div>
+                    <span className="tip" data-tip={c.notes} tabIndex={0}>
+                      {c.route} · ${fmt(c.build_cost_usd)}
+                    </span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <table style={{ marginTop: 8 }}>
-            <thead>
-              <tr>
-                <th>assay</th>
-                <th>measures</th>
-                <th>cost</th>
-                <th>days</th>
-              </tr>
-            </thead>
-            <tbody>
-              {plan.assays.map((a) => (
-                <tr key={a.assay}>
-                  <td>{a.assay}</td>
-                  <td className="muted">{a.measures.join(", ")}</td>
-                  <td>${fmt(a.cost_usd)}</td>
-                  <td>{a.days}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <h3 className="subhead">assay spend</h3>
+          <MiniBars
+            bars={plan.assays.map((a) => ({
+              key: a.assay,
+              name: a.assay,
+              value: a.cost_usd,
+              readout: `$${fmt(a.cost_usd)} · ${a.days}d`,
+              tip: `measures ${a.measures.join(", ")} · $${fmt(a.cost_usd)} over ${a.days} day(s)`,
+            }))}
+          />
           <div className="row" style={{ marginTop: 10 }}>
             <input
               type="text"
@@ -224,38 +240,35 @@ export default function WetlabLoop({
       {latest && (
         <div style={{ marginTop: 12 }}>
           <h3 className="subhead">
-            measured vs predicted · source{" "}
+            <span
+              className="tip"
+              data-tip={
+                latest.error_model?.description ||
+                "Bar length is |measured - predicted|; the readout carries both numbers."
+              }
+              tabIndex={0}
+            >
+              measured vs predicted
+            </span>{" "}
             <span className={`pill ${latest.source === "simulator" ? "" : "ok"}`}>{latest.source}</span>
           </h3>
-          <table>
-            <thead>
-              <tr>
-                <th>metric</th>
-                <th>measured</th>
-                <th>predicted</th>
-                <th>residual</th>
-              </tr>
-            </thead>
-            <tbody>
-              {latest.measurements.map((m) => {
-                const r = latest.residuals[m.metric];
-                return (
-                  <tr key={m.metric}>
-                    <td>
-                      {m.metric}
-                      <span className="muted"> {m.unit}</span>
-                    </td>
-                    <td>{fmt(m.value)}</td>
-                    <td>{r ? fmt(r.predicted) : "—"}</td>
-                    <td className={r && Math.abs(r.residual) > 0 ? "muted" : ""}>
-                      {r ? fmt(r.residual) : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <p className="muted">{latest.error_model?.description || ""}</p>
+          <MiniBars
+            bars={latest.measurements.map((m): MiniBar => {
+              const r = latest.residuals[m.metric];
+              return {
+                key: m.metric,
+                name: m.metric,
+                value: r ? Math.abs(r.residual) : 0,
+                tone: r && Math.abs(r.residual) > 0 ? "warn" : "ok",
+                readout: `${fmt(m.value)} vs ${r ? fmt(r.predicted) : "—"}${m.unit ? ` ${m.unit}` : ""}`,
+                tip: r
+                  ? `measured ${fmt(m.value)}${m.unit ? ` ${m.unit}` : ""}, predicted ${fmt(
+                      r.predicted,
+                    )} · residual ${fmt(r.residual)}`
+                  : `measured ${fmt(m.value)}${m.unit ? ` ${m.unit}` : ""} · no prediction to compare`,
+              };
+            })}
+          />
         </div>
       )}
     </div>

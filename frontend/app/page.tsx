@@ -410,15 +410,8 @@ export default function Workspace() {
             )}
 
             {tab === "lab" && (
-              <div className="center-body">
-                <section className="panel">
-                  <h2>Research lab loop</h2>
-                  <p className="hint">
-                    Cached literature, residue labels, wet-lab plans and measured results, with the
-                    drift they calibrate and the next version they propose.
-                  </p>
-                  <ResearchWorkspace projectId={project?.id ?? null} />
-                </section>
+              <div className="center-body lab">
+                <ResearchWorkspace projectId={project?.id ?? null} />
               </div>
             )}
 

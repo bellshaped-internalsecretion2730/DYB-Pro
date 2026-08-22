@@ -16,14 +16,16 @@ export default function ResearchFeed({
       <div className="row" style={{ marginBottom: 8 }}>
         <button
           type="button"
-          className={tab === "events" ? "" : "secondary"}
+          className="tab"
+          aria-selected={tab === "events"}
           onClick={() => setTab("events")}
         >
           research events ({events.length})
         </button>
         <button
           type="button"
-          className={tab === "papers" ? "" : "secondary"}
+          className="tab"
+          aria-selected={tab === "papers"}
           onClick={() => setTab("papers")}
         >
           cached papers ({papers.length})
@@ -34,7 +36,9 @@ export default function ResearchFeed({
           {events.map((e) => (
             <div className="event" key={e.id}>
               <div className="kind">
-                #{e.sequence_no} {e.kind} · {e.role} · {e.trigger}
+                <span className="tip" data-tip={`triggered by ${e.trigger} · role ${e.role}`} tabIndex={0}>
+                  #{e.sequence_no} {e.kind}
+                </span>
               </div>
               <div>{e.summary}</div>
               <div className="muted mono">
@@ -58,7 +62,13 @@ export default function ResearchFeed({
           {papers.map((p) => (
             <div className="event" key={p.paper_key}>
               <div className="kind">
-                {p.source} · {p.year || "n/a"} · {p.citation_count} citations
+                <span
+                  className="tip"
+                  data-tip={`${p.source} · ${p.year || "year n/a"} · ${p.citation_count} citations`}
+                  tabIndex={0}
+                >
+                  {p.source} · {p.citation_count} cited
+                </span>
               </div>
               <div>
                 {p.url ? (
