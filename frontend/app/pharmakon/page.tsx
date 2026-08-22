@@ -97,7 +97,11 @@ export default function PharmakonBoard() {
     await act("seed", async () => {
       await api.post("/demo/seed");
       const rows = await loadPrograms();
-      if (rows[0]) setProgramId(rows[0].id);
+      if (rows[0]) {
+        setProgramId(rows[0].id);
+        // `act` refreshes the programId from its own closure, which is still null on a first seed.
+        await refresh(rows[0].id);
+      }
     });
   }
 
