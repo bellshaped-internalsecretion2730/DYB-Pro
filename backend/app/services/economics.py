@@ -183,11 +183,11 @@ def recommended_n(
         stop_reason = "budget_exhausted"
     else:
         stop_reason = "candidates_exhausted"
-    batch_cost, _ = _batch_cost(tier, selected)
+    selected_cost, _ = _batch_cost(tier, selected)
     return {
         "n_eff": desired,
         "candidates": [_field(c, "label", "") for c in selected],
-        "batch_cost": batch_cost,
+        "batch_cost": selected_cost,
         "achieved_confidence": p_at_least_one(prior[0], desired),
         "target_confidence": target_confidence,
         "budget_limited": budget_limited,

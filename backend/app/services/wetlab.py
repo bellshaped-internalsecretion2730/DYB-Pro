@@ -303,7 +303,6 @@ def build_pack(
                 "label": cand.label,
                 "sequence": ev.sequence,
                 "mutations": [m.get("mutation") for m in ev.mutations],
-                "filters": cand.failed_filters,
                 "failed_filters": cand.failed_filters,
                 "cost": {
                     "total_usd": probe_cost,
