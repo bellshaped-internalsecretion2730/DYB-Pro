@@ -160,6 +160,10 @@ export default function Workspace() {
         branch: "main",
       });
       await attachCycle(created);
+      // Eager (inline) execution returns an already-terminal cycle, so the poller never runs and
+      // the commit/cycle counters and DAG would keep their pre-cycle values.
+      await refreshProject(project.id);
+      await loadProjects();
     } catch (e) {
       fail(e);
     } finally {
