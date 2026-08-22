@@ -241,7 +241,7 @@ export type GateDecision = {
 };
 
 export type MoleculeEvaluation = {
-  descriptors?: { mw?: number; clogp?: number; tpsa?: number; qed_like?: number };
+  descriptors?: { molecular_weight?: number; clogp?: number; tpsa?: number; qed_like?: number };
   binding?: { pkd?: number; kd_nm?: number; basis?: string };
   admet?: { admet_score?: number };
   synthesis?: { sa_score?: number; cost_per_gram_usd?: number };
@@ -352,8 +352,10 @@ export type PredictionDrift = {
   n: number;
   rmse: number | null;
   bias: number | null;
+  pairs: { molecule_hash: string; predicted_pkd: number; observed_pkd: number }[];
   worst: { molecule_hash: string; predicted: number; observed: number } | null;
   interpretation: string;
+  method: string;
 };
 
 export type Observation = {

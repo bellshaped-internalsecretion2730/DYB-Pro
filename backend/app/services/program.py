@@ -165,7 +165,6 @@ CARRIED_FINDINGS = (
     "citation_count",
     "starting_dose_defined",
     "starting_dose_mg",
-    "cmc_feasibility",
     "scale_up_feasibility",
 )
 
@@ -776,7 +775,7 @@ def run_round(db: Session, round_id: str, sleep=time.sleep) -> ProgramRound:
                 "drift": drift,
                 "next_action": next_action,
                 "new_molecules": [c.id for c in commits],
-                "experiments": len(plan_out.get("experiments", [])),
+                "experiments": len(plan_out.get("proposals", [])),
             },
             provider=supervisor.provider,
         )

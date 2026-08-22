@@ -8,7 +8,10 @@ target-validation evidence, and it must say so instead of guessing.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
+from app.db import SessionLocal
+from app.models import MoleculeCommit
 from app.pharma.stages import STAGE_KEYS
 from tests.conftest import headers
 
@@ -198,6 +201,9 @@ def test_assay_ingestion_overrides_prediction_and_scores_drift(client, program):
     assert drift["n"] >= 1
     assert drift["rmse"] == pytest.approx(1.0, abs=0.05)
     assert drift["bias"] == pytest.approx(-1.0, abs=0.05)  # the proxy under-predicted potency
+    assert drift["worst"]["molecule_hash"] == lead["id"]
+    assert drift["worst"]["predicted"] == pytest.approx(predicted, abs=0.05)
+    assert "under-predicts" in drift["interpretation"]
 
 
 def test_unknown_molecule_hash_is_refused(client, program):
@@ -308,6 +314,31 @@ def test_molecule_export_is_csv_with_provenance(client, program):
     header = res.text.splitlines()[0]
     for column in ("smiles", "commit", "provider", "composite_score"):
         assert column in header
+
+
+def test_molecule_export_neutralises_spreadsheet_formulas(client, program):
+    """A label or SMILES starting with `=` must not be executable in a spreadsheet."""
+    with SessionLocal() as db:
+        row = db.scalars(
+            select(MoleculeCommit).where(MoleculeCommit.program_id == program["id"]).limit(1)
+        ).one()
+        original = row.label
+        row.label = '=HYPERLINK("http://evil","click")'
+        db.commit()
+    try:
+        res = client.get(
+            f"/api/pharma/programs/{program['id']}/export/molecules", headers=headers("viewer")
+        )
+        assert res.status_code == 200
+        # The text is preserved but quoted and prefixed, so no spreadsheet evaluates it.
+        assert "\"'=HYPERLINK(\"\"http://evil\"\",\"\"click\"\")\"" in res.text
+    finally:
+        with SessionLocal() as db:
+            row = db.scalars(
+                select(MoleculeCommit).where(MoleculeCommit.program_id == program["id"]).limit(1)
+            ).one()
+            row.label = original
+            db.commit()
 
 
 def test_daemon_reports_that_offline_mode_cannot_research(client, program):

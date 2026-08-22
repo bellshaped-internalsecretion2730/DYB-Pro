@@ -6,6 +6,8 @@ and the only things a human must touch are the gates the autonomy level reserves
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 
@@ -819,6 +821,19 @@ def program_dossier(
     )
 
 
+def _csv_cell(value: object) -> str:
+    """Render one CSV cell, defusing spreadsheet formula injection.
+
+    SMILES and agent-supplied labels legitimately start with characters a spreadsheet reads as a
+    formula (`-`, `+`, `=`, `@`), so the value is prefixed rather than rewritten: the text stays
+    exactly as recorded and Excel/Sheets treat it as text.
+    """
+    text = "" if value is None else str(value)
+    if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
+
 @router.get("/pharma/programs/{program_id}/export/molecules", tags=["pharma"])
 def export_molecules(
     program_id: str, db: Session = Depends(get_db), user: User = viewer
@@ -829,17 +844,33 @@ def export_molecules(
         .where(MoleculeCommit.program_id == program.id)
         .order_by(MoleculeCommit.composite_score.desc())
     ).all()
-    header = (
-        "smiles,commit,label,scaffold,stage,composite_score,verdict,predicted_pkd,"
-        "mw,clogp,tpsa,admet_score,sa_score,agent_role,provider"
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(
+        [
+            "smiles",
+            "commit",
+            "label",
+            "scaffold",
+            "stage",
+            "composite_score",
+            "verdict",
+            "predicted_pkd",
+            "molecular_weight",
+            "clogp",
+            "tpsa",
+            "admet_score",
+            "sa_score",
+            "agent_role",
+            "provider",
+        ]
     )
-    lines = [header]
     for m in rows:
         ev = m.evaluation or {}
         desc = ev.get("descriptors") or {}
-        lines.append(
-            ",".join(
-                str(v)
+        writer.writerow(
+            [
+                _csv_cell(v)
                 for v in (
                     m.smiles,
                     m.id[:12],
@@ -849,7 +880,7 @@ def export_molecules(
                     m.composite_score,
                     m.verdict,
                     (ev.get("binding") or {}).get("pkd", ""),
-                    desc.get("mw", ""),
+                    desc.get("molecular_weight", ""),
                     desc.get("clogp", ""),
                     desc.get("tpsa", ""),
                     (ev.get("admet") or {}).get("admet_score", ""),
@@ -857,10 +888,10 @@ def export_molecules(
                     m.agent_role,
                     m.provider,
                 )
-            )
+            ]
         )
     return PlainTextResponse(
-        "\n".join(lines) + "\n",
+        buffer.getvalue(),
         media_type="text/csv",
         headers={
             "Content-Disposition": f'attachment; filename="pharmakon-{program.id[:8]}.csv"'

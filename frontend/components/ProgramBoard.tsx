@@ -269,6 +269,7 @@ export function DriftPanel({ detail }: { detail: ProgramDetail }) {
           {d.worst.observed}
         </p>
       )}
+      {d.method && <p className="muted">{d.method}</p>}
     </>
   );
 }

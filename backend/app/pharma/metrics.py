@@ -103,24 +103,70 @@ def prediction_drift(evaluations: list[dict], assays: list[dict]) -> dict:
         for e in evaluations
         if _get(e, "binding", "pkd") is not None
     }
-    pairs: list[tuple[float, float]] = []
+    pairs: list[tuple[str, float, float]] = []
     for row in assays:
         observed = _observed_pkd(row)
         pred = predicted.get(row.get("molecule_hash"))
         if observed is None or pred is None:
             continue
-        pairs.append((pred, observed))
+        pairs.append((str(row.get("molecule_hash") or ""), pred, observed))
     if not pairs:
-        return {"n": 0, "rmse": None, "bias": None, "pairs": []}
-    errors = [p - o for p, o in pairs]
+        return {
+            "n": 0,
+            "rmse": None,
+            "bias": None,
+            "pairs": [],
+            "worst": None,
+            "interpretation": (
+                "no measured potency has been ingested yet, so the binding proxy is unvalidated "
+                "for this program"
+            ),
+            "method": DRIFT_METHOD,
+        }
+    errors = [p - o for _, p, o in pairs]
     rmse = math.sqrt(sum(e * e for e in errors) / len(errors))
+    bias = sum(errors) / len(errors)
+    worst_hash, worst_pred, worst_obs = max(pairs, key=lambda t: abs(t[1] - t[2]))
     return {
         "n": len(pairs),
         "rmse": round(rmse, 3),
-        "bias": round(sum(errors) / len(errors), 3),
-        "pairs": [{"predicted_pkd": round(p, 2), "observed_pkd": round(o, 2)} for p, o in pairs],
-        "method": "predicted complementarity-proxy pKd vs ingested measured pKd",
+        "bias": round(bias, 3),
+        "pairs": [
+            {"molecule_hash": h, "predicted_pkd": round(p, 2), "observed_pkd": round(o, 2)}
+            for h, p, o in pairs
+        ],
+        "worst": {
+            "molecule_hash": worst_hash,
+            "predicted": round(worst_pred, 2),
+            "observed": round(worst_obs, 2),
+        },
+        "interpretation": _drift_interpretation(rmse, bias, len(pairs)),
+        "method": DRIFT_METHOD,
     }
+
+
+DRIFT_METHOD = "predicted complementarity-proxy pKd vs ingested measured pKd"
+
+
+def _drift_interpretation(rmse: float, bias: float, n: int) -> str:
+    """Plain-language read of the drift, including how little it may mean.
+
+    A handful of pairs is an anecdote, not a calibration, so the sample size is stated before the
+    numbers are allowed to sound like a validation result.
+    """
+    direction = "over-predicts" if bias > 0 else "under-predicts"
+    if rmse <= 0.5:
+        quality = "tracks the measurements closely"
+    elif rmse <= 1.0:
+        quality = "is useful for ranking but not for absolute potency"
+    else:
+        quality = "disagrees with the measurements by more than a log unit"
+    caveat = " On this few pairs the estimate is indicative only." if n < 5 else ""
+    return (
+        f"Over {n} prediction/measurement pair(s) the binding proxy {quality} "
+        f"(RMSE {rmse:.2f} log units) and on average {direction} potency by "
+        f"{abs(bias):.2f} log units.{caveat}"
+    )
 
 
 def _observed_pkd(row: dict) -> float | None:

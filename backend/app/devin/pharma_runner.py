@@ -415,7 +415,7 @@ def harvest_findings(outcomes: list[AgentOutcome]) -> dict:
                 if isinstance(r.get("scale_up_feasibility"), int | float)
             ]
             if feas:
-                findings["cmc_feasibility"] = max(feas)
+                findings["scale_up_feasibility"] = max(feas)
         elif outcome.role == "triage":
             findings["recommended_candidate"] = out.get("recommended_candidate")
             findings["recommended_backup"] = out.get("recommended_backup")
