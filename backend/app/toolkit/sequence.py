@@ -110,31 +110,56 @@ def isoelectric_point(seq: str) -> float:
 
 
 def instability_index(seq: str) -> float:
-    """Guruprasad et al. (1990). >40 predicts an unstable protein in vivo."""
+    """Guruprasad et al. (1990) instability index; >40 flagged as unstable *in vivo*.
+
+    Dipeptides missing from the published weight table contribute the neutral weight 1.0, which
+    biases the index downward when coverage is low; `instability_coverage` reports how much of the
+    sequence was actually covered.
+    """
     if len(seq) < 2:
         return 0.0
     total = sum(DIPEPTIDE_INSTABILITY.get(seq[i : i + 2], 1.0) for i in range(len(seq) - 1))
     return round(10.0 / len(seq) * total, 2)
 
 
+def instability_coverage(seq: str) -> float:
+    """Fraction of dipeptides present in the published instability weight table."""
+    if len(seq) < 2:
+        return 0.0
+    pairs = [seq[i : i + 2] for i in range(len(seq) - 1)]
+    known = sum(1 for p in pairs if p in DIPEPTIDE_INSTABILITY)
+    return round(known / len(pairs), 4)
+
+
 def aromaticity(seq: str) -> float:
     return round(sum(seq.count(a) for a in "FWY") / len(seq), 4)
 
 
-def extinction_coefficient(seq: str) -> int:
-    """Pace et al. (1995), reduced cysteines."""
-    return 5500 * seq.count("W") + 1490 * seq.count("Y") + 125 * (seq.count("C") // 2)
+def extinction_coefficient(seq: str, disulfides: bool = True) -> int:
+    """Molar extinction coefficient at 280 nm, Pace et al. (1995).
+
+    `disulfides=True` assumes every cysteine pair forms a cystine (the 125 M-1cm-1 term); with
+    fully reduced cysteines that term is zero. Which value applies depends on the redox state of
+    the purified protein, so both are reported by `descriptors`.
+    """
+    cystine = 125 * (seq.count("C") // 2) if disulfides else 0
+    return 5500 * seq.count("W") + 1490 * seq.count("Y") + cystine
 
 
-def secondary_structure_propensity(seq: str) -> dict[str, float]:
+def secondary_structure_propensity(seq: str) -> dict[str, float | str]:
+    """Mean Chou-Fasman helix/sheet propensities (1.0 = average residue).
+
+    These are composition averages, not predicted secondary-structure content: Chou-Fasman is a
+    per-position method and even then only ~50-60% accurate. Earlier versions renormalized the two
+    means into helix/sheet/coil "fractions" that summed to 1, which invented a coil term and made
+    a composition average look like a structure prediction.
+    """
     helix = sum(HELIX_PROPENSITY[a] for a in seq) / len(seq)
     sheet = sum(SHEET_PROPENSITY[a] for a in seq) / len(seq)
-    coil = max(0.0, 3.0 - helix - sheet)
-    total = helix + sheet + coil
     return {
-        "helix": round(helix / total, 4),
-        "sheet": round(sheet / total, 4),
-        "coil": round(coil / total, 4),
+        "helix_propensity": round(helix, 4),
+        "sheet_propensity": round(sheet, 4),
+        "method": "mean Chou-Fasman propensity (composition average, not predicted content)",
     }
 
 
@@ -165,8 +190,10 @@ def descriptors(seq: str) -> dict:
         "net_charge_ph74": net_charge(seq),
         "isoelectric_point": isoelectric_point(seq),
         "instability_index": instability_index(seq),
+        "instability_coverage": instability_coverage(seq),
         "aromaticity": aromaticity(seq),
         "extinction_coefficient": extinction_coefficient(seq),
+        "extinction_coefficient_reduced": extinction_coefficient(seq, disulfides=False),
         "hydrophobic_moment": hydrophobic_moment(seq),
         "secondary_structure": secondary_structure_propensity(seq),
         "composition": composition(seq),
@@ -244,11 +271,15 @@ def diff_sequences(a: str, b: str) -> list[dict]:
 
 @dataclass
 class Alignment:
+    """Global alignment. `identity`/`similarity` are over aligned columns (gaps included in the
+    denominator), so an alignment of a short fragment to a long protein cannot reach 100%."""
+
     score: float
     identity: float
     similarity: float
     aligned_a: str
     aligned_b: str
+    coverage: float = 1.0
     method: str = "needleman-wunsch/blosum62"
 
 
@@ -264,7 +295,15 @@ def _substitution_matrix():
 _MATRIX = _substitution_matrix()
 
 
+MATRIX_SOURCE = "blosum62" if _MATRIX is not None else "identity-fallback"
+
+
 def sub_score(a: str, b: str) -> float:
+    """BLOSUM62 substitution score, or an identity fallback when the matrix is unavailable.
+
+    The fallback changes alignment behaviour, so `MATRIX_SOURCE` records which one is live rather
+    than letting the substitution model degrade silently.
+    """
     if _MATRIX is not None:
         try:
             return float(_MATRIX[a, b])
@@ -322,7 +361,7 @@ def align(a: str, b: str, gap_open: float = -10.0, gap_extend: float = -0.5) -> 
     pairs = [(x, y) for x, y in zip(aligned_a, aligned_b, strict=False) if x != "-" and y != "-"]
     identical = sum(1 for x, y in pairs if x == y)
     similar = sum(1 for x, y in pairs if sub_score(x, y) > 0)
-    denom = max(1, min(n, m))
+    denom = max(1, len(aligned_a))
     score = max(match[n][m], gap_a[n][m], gap_b[n][m])
     return Alignment(
         score=round(float(score), 2),
@@ -330,6 +369,7 @@ def align(a: str, b: str, gap_open: float = -10.0, gap_extend: float = -0.5) -> 
         similarity=round(similar / denom, 4),
         aligned_a=aligned_a,
         aligned_b=aligned_b,
+        coverage=round(len(pairs) / denom, 4),
     )
 
 
@@ -372,7 +412,13 @@ def homology_search(query: str, corpus: list[dict], top_k: int = 5) -> list[Hit]
 
 
 def back_translate(seq: str, stop: bool = True) -> str:
-    """Codon-optimized (E. coli high-expression) ORF for the protein sequence."""
+    """Back-translate to DNA using one preferred E. coli codon per amino acid.
+
+    This is codon *replacement*, not codon optimization: always picking the same codon ignores
+    tRNA pool balance, local GC/mRNA structure, ramp effects and internal restriction sites, and
+    can create long homopolymer or repeat runs that synthesis vendors reject. Treat the output as
+    a starting ORF to hand to a vendor's optimizer, not a finished construct.
+    """
     seq = clean_sequence(seq)
     dna = "".join(PREFERRED_CODONS[a] for a in seq)
     if stop:
@@ -386,7 +432,11 @@ def gc_content(dna: str) -> float:
 
 
 def melting_temp(dna: str) -> float:
-    """Nearest-neighbour-free Tm (Wallace for <14 nt, else GC%-based salt-adjusted)."""
+    """Approximate Tm: Wallace rule below 14 nt, else a salt-adjusted GC% formula.
+
+    Both are sequence-composition rules with no nearest-neighbour thermodynamics, so expect
+    several degrees of error against a vendor's NN calculator.
+    """
     dna = dna.upper()
     n = len(dna)
     if n == 0:

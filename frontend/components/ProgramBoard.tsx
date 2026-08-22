@@ -6,7 +6,7 @@ import type {
   ProgramDetail,
   ProgramExperiment,
   ProgramMolecule,
-  ResearchEvent,
+  ProgramResearchEvent,
 } from "@/lib/api";
 
 const DECISION_LABEL: Record<string, string> = {
@@ -274,7 +274,7 @@ export function DriftPanel({ detail }: { detail: ProgramDetail }) {
   );
 }
 
-export function ResearchLog({ events }: { events: ResearchEvent[] }) {
+export function ResearchLog({ events }: { events: ProgramResearchEvent[] }) {
   if (events.length === 0) return <p className="muted">no research events yet</p>;
   return (
     <div className="timeline">

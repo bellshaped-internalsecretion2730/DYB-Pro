@@ -1,10 +1,16 @@
-"""Coarse rigid-body docking and a Langevin-style relaxation proxy.
+"""Coarse rigid-body docking and geometry minimization at CA resolution.
 
-This is a *coarse-grained* interaction model at CA resolution: a soft Lennard-Jones term plus a
-Debye-screened electrostatic term over inter-chain CA pairs, sampled over a deterministic
-ensemble of rigid-body perturbations. The ensemble spread is reported as the uncertainty of the
-binding score. It replaces neither AutoDock nor GROMACS; it is a fast, reproducible ranking
-signal and the seam where a real engine plugs in (`DockingBackend`).
+The interaction model is a soft Lennard-Jones term plus a Debye-screened electrostatic term over
+inter-chain CA pairs, sampled over a deterministic ensemble of rigid-body placements.
+
+What this is not:
+  * not a binding free energy — the score is in arbitrary units and cannot be converted to a KD;
+  * not molecular dynamics — `minimize_geometry` is steepest descent on a soft potential, with no
+    time integration, thermostat, solvent or force field;
+  * not a pose prediction — CAPRI assessments show even full-atom docking rarely produces a
+    correct interface without restraints, and this model has no side chains at all.
+
+It is a fast, reproducible ranking signal and the seam where a real engine plugs in.
 """
 
 from __future__ import annotations
@@ -34,12 +40,18 @@ class DockingResult:
     def as_dict(self) -> dict:
         return {
             "binding_score": self.binding_score,
+            "unit": "arbitrary units (uncalibrated)",
             "uncertainty": self.uncertainty,
+            "uncertainty_meaning": "spread of the top poses; sampling noise, not a confidence interval",
             "interface_residues": self.interface_residues[:40],
             "contacts": self.contacts,
             "buried_apolar_fraction": self.buried_apolar_fraction,
             "poses": self.poses,
             "method": self.method,
+            "interpretation": (
+                "orders candidates against one fixed receptor; not a binding affinity, not "
+                "convertible to KD, and the pose itself is unvalidated"
+            ),
         }
 
 
@@ -91,36 +103,62 @@ def score_pose(ligand: Structure, receptor: Structure, ligand_coords) -> tuple[f
     return energy, sorted(interface), contacts
 
 
+def _extent(coords, center) -> float:
+    """Radius of the sphere enclosing `coords` around `center`."""
+    return max((_dist(c, center) for c in coords), default=0.0)
+
+
 def dock(
     ligand: Structure,
     receptor: Structure,
     poses: int = 24,
     seed: int = 20240917,
-    separation: float = 14.0,
+    separation: float | None = None,
 ) -> DockingResult:
-    """Rigid-body ensemble docking. Deterministic for a given (inputs, seed)."""
+    """Rigid-body ensemble docking. Deterministic for a given (inputs, seed).
+
+    The centre-to-centre separation defaults to the two molecular radii plus a contact gap. A
+    fixed separation only produces contacts for molecules of one particular size: too small and
+    every pose clashes, too large and no pose touches, either way the score stops depending on
+    the sequence. Each pose is then slid along the approach vector to its own best separation.
+    """
     rng = random.Random(seed)
     lig_center = _center(ligand.coords)
     rec_center = _center(receptor.coords)
     centered = [(c[0] - lig_center[0], c[1] - lig_center[1], c[2] - lig_center[2]) for c in ligand.coords]
+    if separation is None:
+        separation = (
+            _extent(ligand.coords, lig_center) + _extent(receptor.coords, rec_center) + 4.0
+        )
 
     energies: list[float] = []
     best = (float("inf"), [], 0)
     for _ in range(poses):
         theta = rng.uniform(0, 2 * math.pi)
         phi = rng.uniform(0, math.pi)
-        radius = separation + rng.uniform(-2.0, 2.0)
-        translation = (
-            rec_center[0] + radius * math.sin(phi) * math.cos(theta),
-            rec_center[1] + radius * math.sin(phi) * math.sin(theta),
-            rec_center[2] + radius * math.cos(phi),
-        )
         rotation = (rng.uniform(0, 2 * math.pi), rng.uniform(0, 2 * math.pi))
-        moved = _transform(centered, translation, rotation)
-        energy, interface, contacts = score_pose(ligand, receptor, moved)
-        energies.append(energy)
-        if energy < best[0]:
-            best = (energy, interface, contacts)
+        axis = (
+            math.sin(phi) * math.cos(theta),
+            math.sin(phi) * math.sin(theta),
+            math.cos(phi),
+        )
+        pose_best = (float("inf"), [], 0)
+        for offset in (4.0, 2.0, 0.0, -2.0, -4.0, -6.0, -8.0):
+            radius = separation + offset
+            if radius <= 0:
+                continue
+            translation = (
+                rec_center[0] + radius * axis[0],
+                rec_center[1] + radius * axis[1],
+                rec_center[2] + radius * axis[2],
+            )
+            moved = _transform(centered, translation, rotation)
+            energy, interface, contacts = score_pose(ligand, receptor, moved)
+            if energy < pose_best[0]:
+                pose_best = (energy, interface, contacts)
+        energies.append(pose_best[0])
+        if pose_best[0] < best[0]:
+            best = pose_best
 
     energies.sort()
     top = energies[: max(3, poses // 4)]
@@ -138,11 +176,12 @@ def dock(
     )
 
 
-def relax(structure: Structure, steps: int = 60, seed: int = 7) -> dict:
-    """Coarse steepest-descent relaxation of the CA trace (MD proxy).
+def minimize_geometry(structure: Structure, steps: int = 60, seed: int = 7) -> dict:
+    """Steepest-descent minimization of the CA trace on a soft geometric potential.
 
-    Minimizes a bonded (3.8 A CA-CA) + non-bonded soft-repulsion potential and reports the energy
-    drop and RMSD, giving a cheap "is this geometry strained?" signal.
+    Bonded (3.8 A CA-CA) + non-bonded soft repulsion only. This is geometry regularization, **not**
+    molecular dynamics and not an energy in kcal/mol: there is no force field, solvent, temperature
+    or time integration, so the reported energy only answers "is this trace geometrically strained?"
     """
     rng = random.Random(seed)
     coords = [list(c) for c in structure.coords]
@@ -182,7 +221,9 @@ def relax(structure: Structure, steps: int = 60, seed: int = 7) -> dict:
     rmsd = math.sqrt(sum(math.dist(a, b) ** 2 for a, b in zip(start, coords, strict=False)) / len(coords))
     return {
         "final_energy": round(e0, 3),
+        "unit": "arbitrary units (uncalibrated)",
         "rmsd_to_input": round(rmsd, 3),
         "steps": steps,
         "method": "coarse CA steepest descent (bonded + soft repulsion)",
+        "is_molecular_dynamics": False,
     }

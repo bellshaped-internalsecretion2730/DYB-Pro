@@ -1,10 +1,28 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
+import pytest
+
 from app.services.evaluation import Candidate, evaluate_all
 from app.services.ranking import rank
 from app.services.wetlab import build_pack, to_csv, to_fasta
 
 GB1 = "MTYKLILNGKTLKGETTTEAVDAATAEKVFKQYANDNGVDGEWTYDDATKTFTVTE"
+
+
+@dataclass
+class _Stub:
+    """Minimal evaluation-shaped object, to control exactly which objectives are scored."""
+
+    label: str
+    scores: dict
+    uncertainty: dict = field(default_factory=dict)
+    filters: dict = field(default_factory=lambda: {"passed": True, "failed": []})
+    rationale: str = ""
+    mutations: list = field(default_factory=list)
+    sequence: str = GB1
+    geometry_usable: bool = True
 
 
 def _evaluations():
@@ -38,6 +56,26 @@ def test_ranking_is_multi_objective_with_uncertainty_and_explanations():
         assert ranked[0].why_not_next
 
 
+def test_composite_scores_are_comparable_across_cohorts():
+    """Fixed normalisation windows: a design's score must not move because its cohort changed."""
+    evals = _evaluations()
+    full = {r.label: r.composite for r in rank(evals)}
+    subset = {r.label: r.composite for r in rank(evals[:2])}
+    for label, score in subset.items():
+        assert abs(score - full[label]) < 1e-9
+
+
+def test_missing_objectives_are_reported_not_scored_as_zero():
+    """A candidate lacking an objective must not be scored as if it had the worst possible value."""
+    full = _Stub("full", {"solubility": 2.0, "aggregation": 0.1})
+    partial = _Stub("partial", {"solubility": 2.0})
+    ranked = {r.label: r for r in rank([full, partial])}
+    assert ranked["partial"].as_dict()["missing_objectives"] == ["aggregation"]
+    assert ranked["full"].as_dict()["missing_objectives"] == []
+    assert ranked["partial"].composite == pytest.approx(ranked["full"].normalized["solubility"])
+    assert "not a probability" in ranked["partial"].as_dict()["confidence_meaning"]
+
+
 def test_exclusions_from_history_are_demoted_with_a_reason():
     evals = _evaluations()
     label = evals[0].label
@@ -63,14 +101,19 @@ def test_wetlab_pack_has_orderable_content_and_cost_comparison():
     assert entry["sequence"]
     assert entry["construct"]["orf_length_bp"] % 3 == 0
     assert entry["assay_plan"]
-    assert all(a["predicted_signal"] for a in entry["assay_plan"])
+    for assay in entry["assay_plan"]:
+        # Each assay states which proxy it tests and how to decide; it never predicts the outcome.
+        assert assay["tests_in_silico_proxy"]
+        assert assay["decision_rule"]
+        assert "predicted_signal" not in assay
     assert entry["cost"]["total_usd"] > 0
     assert entry["citations"]
     assert entry["why"]
     econ = pack["economics"]
-    assert econ["shortlist_cost_usd"] <= econ["test_everything_cost_usd"]
-    assert econ["savings_usd"] >= 0
+    assert econ["spend_avoided_usd"] >= 0
+    assert econ["candidate_pool"] == len(evals)
     assert pack["risks"]
+    assert pack["primers_orderable"] is False  # no user plasmid was supplied
 
     csv_text = to_csv(pack)
     assert csv_text.splitlines()[0].count(",") >= 5

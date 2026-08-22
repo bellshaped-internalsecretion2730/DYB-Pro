@@ -146,6 +146,8 @@ export type RankedCandidate = {
   why: string;
   why_not_next?: string | null;
   excluded_reason?: string | null;
+  missing_objectives?: string[];
+  confidence_meaning?: string;
 };
 
 export type ShortlistItem = {
@@ -157,9 +159,25 @@ export type ShortlistItem = {
   confidence: number;
   pareto_optimal: boolean;
   construct: { vector: string; orf_length_bp: number; orf: string; expression_host: string };
-  primers: { mutation: string; forward: string; reverse: string; tm_c: number }[];
-  assay_plan: { assay: string; readout: string; predicted_signal: string; estimated_cost_usd: number }[];
+  primers: {
+    mutation: string;
+    forward: string;
+    reverse: string;
+    tm_c: number;
+    template_source: string;
+    orderable: boolean;
+  }[];
+  assay_plan: {
+    assay: string;
+    readout: string;
+    tests_in_silico_proxy: string;
+    in_silico_value: number | null;
+    in_silico_units: string;
+    decision_rule: string;
+    estimated_cost_usd: number;
+  }[];
   cost: { route: string; total_usd: number };
+  geometry_usable: boolean;
   why: string;
   why_not_next?: string | null;
   citations: string[];
@@ -168,11 +186,21 @@ export type ShortlistItem = {
 export type Economics = {
   shortlist_size: number;
   candidate_pool: number;
+  cost_per_candidate_usd: number;
   shortlist_cost_usd: number;
-  test_everything_cost_usd: number;
-  savings_usd: number;
-  savings_pct: number;
-  expected_hits: number;
+  not_shortlisted: number;
+  spend_avoided_usd: number;
+  basis: string;
+  caveat: string;
+  cost_exclusions: string[];
+};
+
+/** What is measured, not predicted: a null hit rate means nothing has been measured yet. */
+export type ValidationStatus = {
+  measured_results: number;
+  measured_hit_rate: number | null;
+  proxy_agreement: Record<string, { kendall_tau: number | null; pairs: number; note?: string }>;
+  note: string;
 };
 
 export type Shortlist = {
@@ -180,12 +208,23 @@ export type Shortlist = {
     project: string;
     shortlist: ShortlistItem[];
     economics: Economics;
+    validation: ValidationStatus;
+    template_source: string;
+    primers_orderable: boolean;
     risks: { label: string; notes: string[] }[];
     citations: string[];
   };
   ranked: RankedCandidate[];
   narrative: { headline: string; body?: string; source?: string };
   commits: { label: string; commit: string }[];
+};
+
+export type ResearchFinding = {
+  topic_key: string;
+  topic: string;
+  from_cache: boolean;
+  provider: string;
+  findings: { claim?: string; citation?: string; implication?: string }[];
 };
 
 // ----------------------------------------------------------------- Pharmakon
@@ -290,6 +329,62 @@ export type ProgramExperiment = {
 
 export type ResearchEvent = {
   id: string;
+  project_id: string;
+  status: "queued" | "running" | "done" | "failed";
+  trigger: string;
+  triggers: { trigger: string; ref?: string | null; detail?: string; at: string }[];
+  coalesced: number;
+  summary: string;
+  changed: Record<string, unknown>;
+  findings: ResearchFinding[];
+  metrics: Record<string, unknown>;
+  drift: Record<string, unknown>;
+  cache_hits: number;
+  cache_writes: number;
+  provider: string;
+  devin_session_url?: string | null;
+  acus: number;
+  error?: string | null;
+  created_at: string;
+  finished_at?: string | null;
+};
+
+export type ResearchNote = {
+  id: string;
+  topic_key: string;
+  topic: string;
+  question: string;
+  findings: { claim?: string; citation?: string; implication?: string }[];
+  citations: string[];
+  provider: string;
+  devin_session_url?: string | null;
+  reuse_count: number;
+  created_at: string;
+  last_used_at: string;
+};
+
+export type DaemonStatus = {
+  enabled: boolean;
+  provider: string | null;
+  debounce_seconds: number;
+  tick_seconds: number;
+  queued: number;
+  running: number;
+  failed: number;
+  last_event_at?: string | null;
+  cached_topics: number;
+};
+
+export type ProjectResearch = {
+  daemon: DaemonStatus;
+  session: { session_url?: string | null; status: string; messages_sent: number } | null;
+  events: ResearchEvent[];
+  notes: ResearchNote[];
+  cache: { topics: number; reuses: number; note: string };
+};
+
+export type ProgramResearchEvent = {
+  id: string;
   role: string;
   kind: string;
   claim: string;
@@ -311,7 +406,7 @@ export type ProgramEconomics = {
   };
 };
 
-export type DaemonStatus = {
+export type ProgramDaemonStatus = {
   devin_configured: boolean;
   devin_schedules_supported: boolean;
   mode: string;
@@ -328,7 +423,7 @@ export type ProgramDetail = {
   gate_history: { stage_key: string; decision: string; score: number; approval_status: string }[];
   drift: PredictionDrift;
   economics: ProgramEconomics;
-  daemon: DaemonStatus;
+  daemon: ProgramDaemonStatus;
   next_action: { action: string; reason: string; stage?: string | null };
 };
 

@@ -43,8 +43,8 @@ from app.models import (
     GateDecision,
     MoleculeCommit,
     PharmaAgentRun,
+    ProgramResearchEvent,
     ProgramRound,
-    ResearchEvent,
     utcnow,
 )
 from app.pharma.economics import program_economics
@@ -187,12 +187,12 @@ def carried_findings(db: Session, program_id: str) -> dict:
             if value is not None:
                 merged[key] = value
     human = db.scalars(
-        select(ResearchEvent)
+        select(ProgramResearchEvent)
         .where(
-            ResearchEvent.program_id == program_id,
-            ResearchEvent.kind == "human_evidence",
+            ProgramResearchEvent.program_id == program_id,
+            ProgramResearchEvent.kind == "human_evidence",
         )
-        .order_by(ResearchEvent.created_at)
+        .order_by(ProgramResearchEvent.created_at)
     ).all()
     for event in human:
         payload = event.payload or {}
@@ -238,8 +238,8 @@ def record_event(
     payload: dict | None = None,
     provider: str = "deterministic",
     devin_session_id: str | None = None,
-) -> ResearchEvent:
-    event = ResearchEvent(
+) -> ProgramResearchEvent:
+    event = ProgramResearchEvent(
         program_id=program.id,
         round_id=round_id,
         role=role,

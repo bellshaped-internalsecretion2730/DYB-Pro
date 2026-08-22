@@ -46,6 +46,11 @@ MIN_CA_SEPARATION = 3.9
 CA_BOND = 3.8
 
 
+def expected_radius_of_gyration(n: int) -> float:
+    """Empirical globular-protein Rg (angstrom) for `n` residues: Rg ~ 2.2 * N**0.38."""
+    return 2.2 * (max(1, n) ** 0.38)
+
+
 def _grid_neighbours(pts: list[list[float]], cell: float) -> list[tuple[int, int]]:
     """Candidate close pairs via a spatial hash, so clash relief stays near-linear."""
     buckets: dict[tuple[int, int, int], list[int]] = {}
@@ -113,6 +118,47 @@ def relieve_clashes(
     return [(round(p[0], 3), round(p[1], 3), round(p[2], 3)) for p in pts]
 
 
+def collapse_to_globule(
+    coords: list[tuple[float, float, float]],
+    target_rg: float | None = None,
+    rounds: int = 24,
+) -> list[tuple[float, float, float]]:
+    """Contract an extended trace toward a globular radius of gyration.
+
+    Threading idealized secondary-structure geometry along a walking axis produces a chain that
+    keeps extending, so the raw trace has an Rg an order of magnitude above the empirical
+    ``2.2 * N**0.38`` of a folded domain. Every burial, contact and docking feature computed on
+    such a trace is an artifact of the extension. Each round scales the trace toward its centroid
+    and then restores bond lengths and minimum CA separation, which pushes Rg back out a little;
+    iterating converges to a self-avoiding chain of roughly globular size.
+    """
+    n = len(coords)
+    if n < 4:
+        return list(coords)
+    target = target_rg if target_rg is not None else expected_radius_of_gyration(n)
+    pts = [tuple(c) for c in coords]
+    for _ in range(rounds):
+        cx = sum(p[0] for p in pts) / n
+        cy = sum(p[1] for p in pts) / n
+        cz = sum(p[2] for p in pts) / n
+        rg = math.sqrt(
+            sum((p[0] - cx) ** 2 + (p[1] - cy) ** 2 + (p[2] - cz) ** 2 for p in pts) / n
+        )
+        if rg <= target * 1.15:
+            break
+        factor = max(0.55, target / rg)
+        pts = [
+            (
+                cx + (p[0] - cx) * factor,
+                cy + (p[1] - cy) * factor,
+                cz + (p[2] - cz) * factor,
+            )
+            for p in pts
+        ]
+        pts = relieve_clashes(pts)
+    return relieve_clashes(pts)
+
+
 class CoarseGeometricBackend:
     """Builds a CA trace: alpha-helices as helices, strands extended, coils as turns."""
 
@@ -168,7 +214,7 @@ class CoarseGeometricBackend:
         return Structure(
             name=name,
             sequence=seq,
-            coords=relieve_clashes(coords),
+            coords=collapse_to_globule(relieve_clashes(coords)),
             source=f"model:{self.name}",
         )
 

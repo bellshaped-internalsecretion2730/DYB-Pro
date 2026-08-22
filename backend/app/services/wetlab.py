@@ -1,52 +1,92 @@
-"""Wet-lab pack: constructs, mutagenesis primers, assay plan, cost/risk model."""
+"""Wet-lab pack: constructs, mutagenesis primers, assay plan, cost/risk model.
+
+The pack says what to build and what to measure. It deliberately does **not** predict assay
+outcomes (no KD, no Tm shift, no % monomer, no expected yield) and does not estimate a probability
+that a design validates: nothing in the in-silico stack is calibrated against measurements, so any
+such number would be invented. Each assay instead states which in-silico proxy it puts to the test
+and the decision it feeds.
+"""
 
 from __future__ import annotations
 
+import random
+
+from app.services import economics, ranking
+from app.services.prices import COSTS, PRICE_CATALOG, PRICE_LIST_VERSION, TIERS
 from app.toolkit import sequence as seqlib
 
-# Indicative 2025 list prices (USD) for a European/US academic core facility. Configurable.
-COSTS = {
-    "gene_synthesis_per_bp": 0.09,
-    "primer_per_base": 0.25,
-    "site_directed_mutagenesis_reaction": 45.0,
-    "sequence_verification": 18.0,
-    "expression_purification_small_scale": 320.0,
-    "binding_assay_spr": 180.0,
-    "thermal_stability_dsf": 60.0,
-    "aggregation_sec": 95.0,
-    "endotoxin_qc": 40.0,
-}
+# Cost drivers the model does not attempt to price.
+COST_EXCLUSIONS = [
+    "scientist and technician time",
+    "instrument access/booking fees and service contracts",
+    "shared consumables, media, columns and chips",
+    "shipping, customs and vendor minimum-order charges",
+    "failed builds, repeats and troubleshooting",
+    "target/reagent protein production for the binding assay",
+]
 
 ASSAYS = [
     {
         "assay": "SPR / BLI kinetics",
-        "readout": "KD, kon, koff vs target",
-        "predicts": "binding_score",
+        "readout": "KD, kon, koff vs target (measured)",
+        "tests": "binding_score",
+        "decision": "keep designs whose measured KD is at or better than the parent control",
         "cost_key": "binding_assay_spr",
     },
     {
         "assay": "nanoDSF thermal ramp",
-        "readout": "Tm, Tagg onset",
-        "predicts": "ddg_proxy",
+        "readout": "Tm and Tagg onset (measured)",
+        "tests": "ddg_proxy",
+        "decision": "compare measured Tm against the parent run in the same plate",
         "cost_key": "thermal_stability_dsf",
     },
     {
         "assay": "SEC-HPLC / SEC-MALS",
-        "readout": "% monomer, HMW species",
-        "predicts": "aggregation",
+        "readout": "% monomer and HMW species (measured)",
+        "tests": "aggregation",
+        "decision": "reject designs with more HMW species than the parent",
         "cost_key": "aggregation_sec",
     },
     {
-        "assay": "Small-scale expression + A280 solubility",
-        "readout": "mg/L soluble yield",
-        "predicts": "solubility",
+        "assay": "Small-scale expression + A280",
+        "readout": "soluble yield in mg/L (measured)",
+        "tests": "solubility",
+        "decision": "gate the rest of the panel on expressing at all",
         "cost_key": "expression_purification_small_scale",
     },
 ]
 
+# Agilent QuikChange II guidance (manual 200521): 25-45 nt, mutation centred with 10-15 correct
+# bases either side, >=40% GC, ending in G or C, and Tm >= 78 C by their formula.
+PRIMER_MIN_LENGTH = 25
+PRIMER_MAX_LENGTH = 45
+PRIMER_MIN_TM = 78.0
+PRIMER_MIN_GC = 0.40
 
-def mutagenesis_primers(parent_dna: str, mutation: dict, flank: int = 15) -> dict:
-    """QuikChange-style complementary primer pair centred on the mutated codon."""
+
+def quikchange_tm(primer: str, mismatches: int = 3) -> float:
+    """Tm by the Agilent QuikChange formula: 81.5 + 0.41*%GC - 675/N - %mismatch."""
+    n = len(primer)
+    if n == 0:
+        return 0.0
+    gc_pct = seqlib.gc_content(primer) * 100.0
+    mismatch_pct = 100.0 * mismatches / n
+    return round(81.5 + 0.41 * gc_pct - 675.0 / n - mismatch_pct, 1)
+
+
+def mutagenesis_primers(
+    parent_dna: str,
+    mutation: dict,
+    flank: int = 15,
+    template_source: str = "dyb-pro-generated ORF",
+) -> dict:
+    """QuikChange-style complementary primer pair centred on the mutated codon.
+
+    `parent_dna` must be the template that will actually be in the mutagenesis reaction. When it is
+    a DYB Pro back-translated ORF rather than the user's plasmid, the primers cannot anneal to
+    their plasmid at all -- the codons are ours, not theirs -- so `orderable` stays False and the
+    pair is a design template to regenerate against the real sequence.
+    """
     pos = int(mutation["position"])
     codon_start = (pos - 1) * 3
     new_codon = seqlib.PREFERRED_CODONS[mutation["mt"]]
@@ -55,19 +95,34 @@ def mutagenesis_primers(parent_dna: str, mutation: dict, flank: int = 15) -> dic
     end = min(len(mutated), codon_start + 3 + flank)
     fwd = mutated[start:end]
     rev = seqlib.reverse_complement(fwd)
+    tm = quikchange_tm(fwd)
+    gc = seqlib.gc_content(fwd)
+    checks = {
+        "length_in_range": PRIMER_MIN_LENGTH <= len(fwd) <= PRIMER_MAX_LENGTH,
+        "tm_at_least_78c": tm >= PRIMER_MIN_TM,
+        "gc_at_least_40pct": gc >= PRIMER_MIN_GC,
+        "ends_in_g_or_c": bool(fwd) and fwd[0] in "GC" and fwd[-1] in "GC",
+        "template_is_users_plasmid": template_source == "user-supplied template",
+    }
     return {
         "mutation": mutation.get("mutation") or f"{mutation['wt']}{pos}{mutation['mt']}",
         "forward": fwd,
         "reverse": rev,
         "length": len(fwd),
-        "tm_c": seqlib.melting_temp(fwd),
-        "gc_fraction": seqlib.gc_content(fwd),
+        "tm_c": tm,
+        "tm_method": "Agilent QuikChange formula (not nearest-neighbour)",
+        "gc_fraction": gc,
         "codon_change": f"{parent_dna[codon_start:codon_start + 3]}->{new_codon}",
-        "method": "QuikChange-style complementary primers, E. coli optimal codons",
+        "template_source": template_source,
+        "checks": checks,
+        "orderable": all(checks.values()),
+        "method": "QuikChange-style complementary primers, E. coli preferred codons",
     }
 
 
 def construct(sequence: str, label: str, vector: str = "pET-28a(+)") -> dict:
+    """A default E. coli expression construct. Host, vector and tags are assumptions, not advice:
+    they are wrong for any glycosylated, disulfide-rich or membrane protein."""
     orf = seqlib.back_translate(sequence)
     return {
         "label": label,
@@ -80,7 +135,15 @@ def construct(sequence: str, label: str, vector: str = "pET-28a(+)") -> dict:
         "protein_length": len(sequence),
         "molecular_weight_da": seqlib.molecular_weight(sequence),
         "extinction_coefficient_m1cm1": seqlib.extinction_coefficient(sequence),
-        "notes": "codon-optimized for E. coli high expression (CAI-preferred codons)",
+        "extinction_coefficient_reduced_m1cm1": seqlib.extinction_coefficient(
+            sequence, disulfides=False
+        ),
+        "assumptions": [
+            "prokaryotic host: no glycosylation and an oxidising-poor cytoplasm",
+            "single preferred codon per residue; hand to a vendor optimizer before ordering",
+            "tags and vector are defaults, not chosen for this protein",
+        ],
+        "notes": "codon-replaced for E. coli (one preferred codon per residue), not CAI-optimized",
     }
 
 
@@ -93,7 +156,11 @@ def _candidate_cost(mutation_count: int, synthesize: bool, orf_bp: int) -> dict:
             COSTS["site_directed_mutagenesis_reaction"] + 2 * 30 * COSTS["primer_per_base"]
         )
         route = "site-directed mutagenesis"
-    qc = COSTS["sequence_verification"] + COSTS["endotoxin_qc"]
+    qc = (
+        COSTS["sequence_verification"]
+        + COSTS["endotoxin_qc"]
+        + COSTS["transformation_and_plasmid_prep"]
+    )
     assays = sum(COSTS[a["cost_key"]] for a in ASSAYS)
     return {
         "route": route,
@@ -101,6 +168,8 @@ def _candidate_cost(mutation_count: int, synthesize: bool, orf_bp: int) -> dict:
         "qc_usd": round(qc, 2),
         "assay_usd": round(assays, 2),
         "total_usd": round(build + qc + assays, 2),
+        "basis": "indicative consumables/service list prices only",
+        "excludes": COST_EXCLUSIONS,
     }
 
 
@@ -111,17 +180,45 @@ def build_pack(
     project_name: str,
     top_n: int = 5,
     total_candidate_pool: int | None = None,
+    template_dna: str | None = None,
+    calibration: dict | None = None,
+    tier: str = "T2",
+    budget: float | None = None,
+    target_confidence: float = 0.80,
+    prior_low: float | None = None,
+    prior_high: float | None = None,
+    probe_fraction: float = 0.10,
+    probe_seed: int | str | None = None,
+    cycle_id: str | None = None,
+    deciding_readout: str | None = None,
 ) -> dict:
-    """Assemble the orderable wet-lab pack for the top-N ranked candidates."""
-    parent_dna = seqlib.back_translate(parent_sequence)
+    """Assemble the wet-lab pack for the top-N ranked candidates.
+
+    `template_dna` is the user's actual plasmid/template sequence. Without it, primers are designed
+    against a DYB Pro-generated ORF and are marked as not orderable.
+
+    Filter recall is unmeasured across this field, so rejected designs are the only source of a
+    future false-negative estimate; recall probes are therefore kept separate from hit planning.
+    """
+    template_source = (
+        "user-supplied template" if template_dna else "dyb-pro-generated ORF"
+    )
+    parent_dna = template_dna or seqlib.back_translate(parent_sequence)
+    if tier not in TIERS:
+        raise ValueError(f"unknown assay tier: {tier}")
+    economics.validate_tier_for_readout(tier, deciding_readout)
+    prior = economics.validate_prior(prior_low, prior_high)
+    passing = [cand for cand in ranked if cand.passed_filters and not cand.excluded_reason]
+    clusters = ranking.cluster_candidates(passing)
+    selected = ranking.round_robin_clusters(clusters, top_n)
     shortlist: list[dict] = []
-    for cand in ranked:
-        if len(shortlist) >= top_n:
-            break
-        if not cand.passed_filters:
-            continue
+    for cand, cluster_id in selected:
         ev = evaluations[cand.label]
-        primers = [mutagenesis_primers(parent_dna, m) for m in ev.mutations if m.get("mt")]
+        primers = [
+            mutagenesis_primers(parent_dna, m, template_source=template_source)
+            for m in ev.mutations
+            if m.get("mt")
+        ]
         cons = construct(ev.sequence, cand.label)
         cost = _candidate_cost(len(ev.mutations), synthesize=not primers, orf_bp=cons["orf_length_bp"])
         shortlist.append(
@@ -133,6 +230,8 @@ def build_pack(
                 "composite_score": cand.composite,
                 "confidence": cand.confidence,
                 "pareto_optimal": cand.pareto,
+                "cluster_id": cluster_id,
+                "geometry_usable": bool(ev.geometry_usable),
                 "scores": cand.scores,
                 "uncertainty": cand.uncertainty,
                 "why": cand.why,
@@ -143,8 +242,19 @@ def build_pack(
                     {
                         "assay": a["assay"],
                         "readout": a["readout"],
-                        "predicted_signal": _predicted_signal(a["predicts"], cand.scores),
+                        "tests_in_silico_proxy": a["tests"],
+                        "in_silico_value": cand.scores.get(a["tests"]),
+                        "in_silico_units": "arbitrary units (uncalibrated proxy)",
+                        "decision_rule": a["decision"],
                         "estimated_cost_usd": COSTS[a["cost_key"]],
+                        "estimated_cost_source": PRICE_CATALOG[
+                            {
+                                "binding_assay_spr": "spr",
+                                "thermal_stability_dsf": "nanodsf",
+                                "aggregation_sec": "sec",
+                                "expression_purification_small_scale": "expression_purification",
+                            }[a["cost_key"]]
+                        ].source,
                     }
                     for a in ASSAYS
                 ],
@@ -155,75 +265,161 @@ def build_pack(
 
     pool = total_candidate_pool if total_candidate_pool is not None else len(ranked)
     shortlist_cost = round(sum(c["cost"]["total_usd"] for c in shortlist), 2)
+    not_shortlisted = max(0, pool - len(shortlist))
     per_candidate = shortlist_cost / max(1, len(shortlist))
-    test_everything = round(per_candidate * pool, 2)
-    hit_probability = _hit_probability(shortlist)
+    plan_cost, plan_interval = economics.batch_cost(tier, shortlist)
+    baseline_passing = [cand for cand in ranked if cand.passed_filters]
+    baseline_candidates = [
+        {"sequence": evaluations[c.label].sequence, "mutations": evaluations[c.label].mutations}
+        for c in baseline_passing
+    ]
+    baseline_cost, baseline_interval = economics.batch_cost("T2", baseline_candidates)
+    stop_rule = economics.recommended_n(
+        clusters, tier, budget, target_confidence=target_confidence, prior=prior[:2]
+    )
+    n_eff = len({item["cluster_id"] for item in shortlist})
+    cost_per_hit = economics.cost_per_validated_hit(plan_cost, n_eff, prior[:2])
+    expected = [
+        economics.expected_hits(prior[0], n_eff),
+        economics.expected_hits(prior[1], n_eff),
+    ]
+    cost_ratio = (
+        [baseline_cost / plan_interval[1], baseline_cost / plan_interval[0]]
+        if plan_interval[0] > 0
+        else None
+    )
+    probe_pool = [cand for cand in ranked if not cand.passed_filters]
+    probe_count = max(1, round(probe_fraction * len(shortlist))) if probe_pool else 0
+    rng = random.Random(probe_seed if probe_seed is not None else cycle_id)
+    probes: list[dict] = []
+    for cand in rng.sample(probe_pool, min(probe_count, len(probe_pool))):
+        ev = evaluations[cand.label]
+        probe_record = {"sequence": ev.sequence, "mutations": ev.mutations}
+        probe_cost, probe_interval = economics.batch_cost(tier, [probe_record])
+        probes.append(
+            {
+                "probe": True,
+                "probe_reason": "filter recall estimation",
+                "label": cand.label,
+                "sequence": ev.sequence,
+                "mutations": [m.get("mutation") for m in ev.mutations],
+                "failed_filters": cand.failed_filters,
+                "cost": {
+                    "total_usd": probe_cost,
+                    "interval_usd": list(probe_interval),
+                    "source": economics.priced_line_items(tier, [probe_record]),
+                },
+            }
+        )
+    probe_cost = round(sum(item["cost"]["total_usd"] for item in probes), 2)
+    line_items = economics.priced_line_items(tier, shortlist)
     return {
         "project": project_name,
         "parent_sequence": parent_sequence,
+        "template_source": template_source,
+        "primers_orderable": bool(template_dna),
         "shortlist": shortlist,
         "economics": {
+            "price_list_version": PRICE_LIST_VERSION,
+            "tier": tier,
+            "tier_caveat": TIERS[tier]["caveat"],
+            "prior": {
+                "low": prior[0],
+                "high": prior[1],
+                "source": prior[2],
+                "shrinkage_applied": economics.CROSS_LAB_SHRINKAGE,
+            },
+            "n_tested": len(shortlist),
+            "n_eff": n_eff,
+            "batch_cost_usd": plan_cost,
+            "batch_cost_interval_usd": list(plan_interval),
+            "expected_hits": expected,
+            "cost_per_validated_hit_usd": list(cost_per_hit) if cost_per_hit else None,
+            "stop_rule": stop_rule,
+            "baseline": {
+                "name": "naive_all_filter_passing_at_T2",
+                "n": len(baseline_candidates),
+                "cost": baseline_cost,
+                "cost_interval_usd": list(baseline_interval),
+            },
+            "cost_ratio_vs_baseline": cost_ratio,
+            "line_items": line_items,
+            "probe_cost_usd": probe_cost,
+            "probe_note": "spent to estimate false-negative rate; excluded from hit expectations",
             "shortlist_size": len(shortlist),
             "candidate_pool": pool,
+            "cost_per_candidate_usd": round(per_candidate, 2),
             "shortlist_cost_usd": shortlist_cost,
-            "test_everything_cost_usd": test_everything,
-            "savings_usd": round(test_everything - shortlist_cost, 2),
-            "savings_pct": round(
-                100.0 * (test_everything - shortlist_cost) / max(1e-6, test_everything), 1
+            "not_shortlisted": not_shortlisted,
+            "spend_avoided_usd": round(per_candidate * not_shortlisted, 2),
+            "basis": (
+                "consumables/service list prices for the candidates in this cycle's pool; "
+                "excludes labour and overheads"
             ),
-            "expected_hits": round(hit_probability * len(shortlist), 2),
-            "expected_hit_probability_per_candidate": round(hit_probability, 3),
+            "caveat": (
+                "avoided spend on designs that were not built. It is not a validated saving and "
+                "not a claim about the whole in-silico stage: only measured results can tell you "
+                "whether the shortlist was the right subset."
+            ),
             "cost_model": COSTS,
+            "cost_exclusions": COST_EXCLUSIONS,
+            "disclaimer": "planning-model estimate; not validated savings",
         },
+        "probes": probes,
+        "independent_bets": len({item["cluster_id"] for item in shortlist}),
+        "spend_avoided_basis": (
+            "planning-model estimate; superseded by economics.cost_ratio_vs_baseline"
+        ),
+        "validation": _validation_status(calibration),
         "risks": _risks(shortlist),
         "citations": sorted({c for item in shortlist for c in item["citations"]}),
     }
 
 
-def _predicted_signal(objective: str, scores: dict) -> str:
-    value = scores.get(objective)
-    if value is None:
-        return "no in-silico prior; measure as baseline"
-    if objective == "binding_score":
-        return f"expect measurable binding (docking score {value}); flag if KD > 1 uM"
-    if objective == "ddg_proxy":
-        direction = "Tm at or above parent" if value <= 0 else "Tm drop of 1-4 C vs parent"
-        return f"{direction} (ddG proxy {value})"
-    if objective == "aggregation":
-        return f"expect >95% monomer if aggregation score stays at {value}"
-    if objective == "solubility":
-        return f"expect soluble expression (solubility index {value})"
-    return f"{objective} = {value}"
+def _validation_status(calibration: dict | None) -> dict:
+    """What is actually known about this project's in-silico vs measured agreement.
 
-
-def _hit_probability(shortlist: list[dict]) -> float:
-    """Confidence- and filter-weighted prior that a shortlisted design validates in vitro."""
-    if not shortlist:
-        return 0.0
-    total = 0.0
-    for item in shortlist:
-        base = 0.45
-        base += 0.25 * item["confidence"]
-        if item["pareto_optimal"]:
-            base += 0.08
-        if len(item["mutations"]) > 4:
-            base -= 0.1
-        total += min(0.9, max(0.05, base))
-    return total / len(shortlist)
+    With no measured results in the project there is no hit rate to report, and confidence plus
+    Pareto membership cannot be turned into one: both are properties of the heuristics, not
+    evidence about the assay.
+    """
+    measured = int((calibration or {}).get("measurements", 0))
+    if not measured:
+        return {
+            "measured_results": 0,
+            "measured_hit_rate": None,
+            "proxy_agreement": {},
+            "note": (
+                "no measured wet-lab results ingested for this project, so no hit rate or "
+                "validation probability can be reported"
+            ),
+        }
+    return {
+        "measured_results": measured,
+        "measured_hit_rate": (calibration or {}).get("hit_rate"),
+        "proxy_agreement": (calibration or {}).get("objectives", {}),
+        "note": (
+            "observed agreement between proxies and measurements in this project only; "
+            "small-sample and project-specific"
+        ),
+    }
 
 
 def _risks(shortlist: list[dict]) -> list[dict]:
     risks: list[dict] = []
     for item in shortlist:
-        notes = []
+        notes = ["always order the parent as a same-plate control; all scores are relative"]
         if item["confidence"] < 0.6:
-            notes.append("wide in-silico uncertainty — order alongside the parent as a control")
+            notes.append("wide in-silico uncertainty — treat the ordering as weak evidence")
         if len(item["mutations"]) >= 3:
             notes.append("multi-mutant: epistasis is not modelled, consider single-mutant panel")
         if item["scores"].get("aggregation", 0) > 0.2:
             notes.append("residual aggregation-prone windows — include SEC in first pass")
-        if not notes:
-            notes.append("no material in-silico risk flags; standard QC sufficient")
+        if not item.get("geometry_usable", True):
+            notes.append(
+                "coarse model geometry failed its own compactness/clash check: structure-derived "
+                "scores (binding, burial-weighted stability) are unreliable for this design"
+            )
         risks.append({"label": item["label"], "notes": notes})
     return risks
 

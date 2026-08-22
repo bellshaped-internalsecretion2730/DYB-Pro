@@ -192,6 +192,113 @@ class Observation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class MeasuredResult(Base):
+    """A real (or explicitly simulated) wet-lab measurement on one commit.
+
+    This is the only place in the system where a number comes from an instrument rather than a
+    heuristic, so it is kept separate from `ProteinCommit.scores` and never overwrites them: the
+    commit stays immutable and the drift between proxy and measurement stays inspectable.
+    """
+
+    __tablename__ = "measured_results"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    commit_id: Mapped[str] = mapped_column(ForeignKey("protein_commits.id"), index=True)
+    assay: Mapped[str] = mapped_column(String(128))
+    objective: Mapped[str] = mapped_column(String(64), default="")  # proxy this assay tests
+    readout: Mapped[str] = mapped_column(String(128), default="")
+    value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(64), default="")
+    higher_is_better: Mapped[bool] = mapped_column(Boolean, default=True)
+    outcome: Mapped[str] = mapped_column(String(32), default="unknown")  # hit|miss|inconclusive
+    origin: Mapped[str] = mapped_column(String(32), default="measured")  # measured|simulated
+    notes: Mapped[str] = mapped_column(Text, default="")
+    reported_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ResearchNote(Base):
+    """Cached research on one topic, reused across every later version of a project.
+
+    The cache is append-only: a note is never deleted or overwritten, because a claim that informed
+    v3 must still be readable when v9 contradicts it. `topic_key` is what makes reuse possible —
+    the daemon derives it from what changed (a mutation token, a liability motif, an objective) so
+    the same question is never researched twice.
+    """
+
+    __tablename__ = "research_notes"
+    __table_args__ = (UniqueConstraint("project_id", "topic_key", name="uq_note_project_topic"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    topic_key: Mapped[str] = mapped_column(String(128), index=True)
+    topic: Mapped[str] = mapped_column(String(255), default="")
+    question: Mapped[str] = mapped_column(Text, default="")
+    findings: Mapped[list] = mapped_column(JSON, default=list)
+    citations: Mapped[list] = mapped_column(JSON, default=list)
+    provider: Mapped[str] = mapped_column(String(32), default="local-simulation")
+    devin_session_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    reuse_count: Mapped[int] = mapped_column(Integer, default=0)
+    first_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ResearchEvent(Base):
+    """One unit of daemon work: something changed, so research ran and drift was re-estimated.
+
+    Rows are created `queued` by whatever changed the project and processed by the daemon tick, so
+    a trigger is durable even if no worker is alive. Triggers arriving inside the debounce window
+    are merged into the queued row (`triggers`, `coalesced`) rather than dropped or fanned out into
+    one session per commit.
+    """
+
+    __tablename__ = "research_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="queued")  # queued|running|done|failed
+    trigger: Mapped[str] = mapped_column(String(32), default="manual")
+    # commit|measured_result|cycle|branch_head|upload|manual
+    triggers: Mapped[list] = mapped_column(JSON, default=list)
+    coalesced: Mapped[int] = mapped_column(Integer, default=0)
+    changed: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    findings: Mapped[list] = mapped_column(JSON, default=list)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    drift: Mapped[dict] = mapped_column(JSON, default=dict)
+    cache_hits: Mapped[int] = mapped_column(Integer, default=0)
+    cache_writes: Mapped[int] = mapped_column(Integer, default=0)
+    provider: Mapped[str] = mapped_column(String(32), default="local-simulation")
+    devin_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    devin_session_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    acus: Mapped[float] = mapped_column(Float, default=0.0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    head_commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ResearchDaemonSession(Base):
+    """The daemon's own long-lived Devin session per project.
+
+    Each research event sends a message into this session instead of starting a new one, so the
+    daemon accumulates context about the lineage the way a scientist following one project would.
+    """
+
+    __tablename__ = "research_daemon_sessions"
+
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(128))
+    session_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    status: Mapped[str] = mapped_column(String(64), default="running")
+    messages_sent: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class UsageRecord(Base):
     __tablename__ = "usage_records"
 
@@ -399,10 +506,10 @@ class AssayResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class ResearchEvent(Base):
+class ProgramResearchEvent(Base):
     """Append-only research memory for a program: findings, citations, drift, daemon activity."""
 
-    __tablename__ = "research_events"
+    __tablename__ = "program_research_events"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
     program_id: Mapped[str] = mapped_column(ForeignKey("drug_programs.id"), index=True)

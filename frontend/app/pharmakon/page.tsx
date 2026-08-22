@@ -21,7 +21,7 @@ import {
   type ProgramExperiment,
   type ProgramMolecule,
   type Provider,
-  type ResearchEvent,
+  type ProgramResearchEvent,
   type RoundSummary,
 } from "@/lib/api";
 
@@ -34,7 +34,7 @@ export default function PharmakonBoard() {
   const [detail, setDetail] = useState<ProgramDetail | null>(null);
   const [molecules, setMolecules] = useState<ProgramMolecule[]>([]);
   const [experiments, setExperiments] = useState<ProgramExperiment[]>([]);
-  const [research, setResearch] = useState<ResearchEvent[]>([]);
+  const [research, setResearch] = useState<ProgramResearchEvent[]>([]);
   const [rounds, setRounds] = useState<RoundSummary[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export default function PharmakonBoard() {
       api.get<ProgramDetail>(`/pharma/programs/${id}`),
       api.get<ProgramMolecule[]>(`/pharma/programs/${id}/molecules`),
       api.get<ProgramExperiment[]>(`/pharma/programs/${id}/experiments`),
-      api.get<ResearchEvent[]>(`/pharma/programs/${id}/research?limit=40`),
+      api.get<ProgramResearchEvent[]>(`/pharma/programs/${id}/research?limit=40`),
       api.get<RoundSummary[]>(`/pharma/programs/${id}/rounds`),
     ]);
     setDetail(d);

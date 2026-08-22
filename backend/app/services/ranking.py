@@ -1,8 +1,18 @@
-"""Multi-objective ranking with uncertainty and 'why this, not that' explanations."""
+"""Multi-objective ranking with uncertainty and 'why this, not that' explanations.
+
+Scores are normalized against fixed per-objective windows (see `SCALES`), not against the current
+cohort, so a composite score means the same thing in round 1 and round 7 and adding a weak
+candidate cannot change the ranking of the others.
+
+The objectives are correlated (hydropathy feeds the solubility index, the aggregation fraction and
+the destabilization proxy), so the weights are a stated preference, not independent evidence.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from app.toolkit import sequence as seqlib
 
 # objective -> (weight, direction) where direction=-1 means lower is better.
 DEFAULT_OBJECTIVES: dict[str, tuple[float, int]] = {
@@ -15,12 +25,26 @@ DEFAULT_OBJECTIVES: dict[str, tuple[float, int]] = {
 }
 
 FRIENDLY = {
-    "binding_score": "predicted binding",
-    "ddg_proxy": "fold stability",
-    "solubility": "solubility",
-    "aggregation": "aggregation risk",
-    "immunogenicity": "immunogenicity risk",
-    "instability_index": "in-vivo stability",
+    "binding_score": "interaction score (docking proxy)",
+    "ddg_proxy": "destabilization risk (proxy)",
+    "solubility": "solubility index (proxy)",
+    "aggregation": "aggregation-prone fraction",
+    "immunogenicity": "MHC-II motif density",
+    "instability_index": "instability index",
+}
+
+# Fixed clamp window per objective: (low, high) on the raw score scale. Normalizing to the range
+# of the current cohort instead makes every score relative to whoever else happened to be in the
+# same batch, so "composite 0.82" means nothing across cycles and adding a bad candidate silently
+# improves everyone else (rank reversal). These windows are hand-set from the observable range of
+# each heuristic, not fitted, and values outside them are clamped.
+SCALES: dict[str, tuple[float, float]] = {
+    "binding_score": (-400.0, 0.0),
+    "ddg_proxy": (-4.0, 8.0),
+    "solubility": (-4.0, 8.0),
+    "aggregation": (0.0, 0.5),
+    "immunogenicity": (0.0, 15.0),
+    "instability_index": (0.0, 80.0),
 }
 
 
@@ -31,7 +55,7 @@ class RankedCandidate:
     composite: float
     confidence: float
     normalized: dict[str, float]
-    scores: dict[str, float]
+    scores: dict[str, float]  # raw proxy values, each in its own arbitrary units
     uncertainty: dict[str, float]
     passed_filters: bool
     failed_filters: list[str]
@@ -46,8 +70,15 @@ class RankedCandidate:
             "label": self.label,
             "rank": self.rank,
             "composite_score": self.composite,
+            "composite_scale": "weighted mean of fixed-window normalized proxies, 0-1",
             "confidence": self.confidence,
+            "confidence_meaning": (
+                "1 - mean declared method uncertainty over each objective's fixed window; "
+                "uncalibrated, not a probability of wet-lab success"
+            ),
             "normalized": self.normalized,
+            "missing_objectives": self.payload.get("missing_objectives", []),
+            "geometry_usable": self.payload.get("geometry_usable", True),
             "scores": self.scores,
             "uncertainty": self.uncertainty,
             "passed_filters": self.passed_filters,
@@ -59,28 +90,50 @@ class RankedCandidate:
         }
 
 
-def _normalize(values: list[float], direction: int) -> list[float]:
-    lo, hi = min(values), max(values)
+@dataclass
+class Cluster:
+    representative: RankedCandidate
+    members: list[RankedCandidate] = field(default_factory=list)
+
+    @property
+    def rep(self) -> RankedCandidate:
+        return self.representative
+
+
+def _normalize_fixed(value: float, key: str, direction: int) -> float:
+    """Map a raw score onto [0, 1] using this objective's fixed window (1 = better)."""
+    lo, hi = SCALES.get(key, (0.0, 1.0))
     if hi - lo < 1e-9:
-        return [0.5] * len(values)
-    if direction > 0:
-        return [(v - lo) / (hi - lo) for v in values]
-    return [(hi - v) / (hi - lo) for v in values]
+        return 0.5
+    unit = min(1.0, max(0.0, (value - lo) / (hi - lo)))
+    return unit if direction > 0 else 1.0 - unit
+
+
+def scale_span(key: str) -> float:
+    lo, hi = SCALES.get(key, (0.0, 1.0))
+    return max(1e-9, hi - lo)
 
 
 def _pareto_front(rows: list[dict], objectives: dict[str, tuple[float, int]]) -> set[str]:
-    keys = list(objectives)
+    """Non-dominated set over the objectives both candidates actually scored.
+
+    Comparing on an objective one candidate has no score for would let a missing value decide
+    dominance, so those objectives are skipped for that pair.
+    """
     front: set[str] = set()
     for a in rows:
         dominated = False
         for b in rows:
             if a is b:
                 continue
-            better_or_equal = all(
-                b["normalized"].get(k, 0.0) >= a["normalized"].get(k, 0.0) for k in keys
-            )
+            keys = [
+                k for k in objectives if k in a["normalized"] and k in b["normalized"]
+            ]
+            if not keys:
+                continue
+            better_or_equal = all(b["normalized"][k] >= a["normalized"][k] for k in keys)
             strictly_better = any(
-                b["normalized"].get(k, 0.0) > a["normalized"].get(k, 0.0) + 1e-9 for k in keys
+                b["normalized"][k] > a["normalized"][k] + 1e-9 for k in keys
             )
             if better_or_equal and strictly_better:
                 dominated = True
@@ -106,29 +159,33 @@ def rank(
         return []
 
     active = {k: v for k, v in objs.items() if any(k in e.scores for e in valid)}
-    columns: dict[str, list[float]] = {}
-    for key, (_, direction) in active.items():
-        raw = [float(e.scores.get(key, 0.0)) for e in valid]
-        columns[key] = _normalize(raw, direction)
 
     rows: list[dict] = []
-    for idx, ev in enumerate(valid):
-        normalized = {k: round(columns[k][idx], 4) for k in active}
-        weight_total = sum(w for w, _ in active.values()) or 1.0
-        composite = sum(active[k][0] * normalized[k] for k in active) / weight_total
-        rel_unc = []
-        for k in active:
-            unc = float(ev.uncertainty.get(k, 0.0))
-            scale = max(1e-6, abs(float(ev.scores.get(k, 0.0))))
-            rel_unc.append(min(1.0, unc / scale))
-        confidence = round(1.0 - (sum(rel_unc) / max(1, len(rel_unc))), 3)
+    for ev in valid:
+        # Objectives this candidate has no score for are dropped and its remaining weights are
+        # renormalized; substituting 0.0 would score a missing objective as the worst possible.
+        present = [k for k in active if k in ev.scores]
+        normalized = {
+            k: round(_normalize_fixed(float(ev.scores[k]), k, active[k][1]), 4) for k in present
+        }
+        weight_total = sum(active[k][0] for k in present) or 1.0
+        composite = sum(active[k][0] * normalized[k] for k in present) / weight_total
+        # Uncertainty relative to the objective's fixed window, so it does not blow up for scores
+        # that happen to sit near zero.
+        rel_unc = [
+            min(1.0, float(ev.uncertainty.get(k, 0.0)) / scale_span(k))
+            for k in present
+            if k in ev.uncertainty
+        ]
+        confidence = round(1.0 - (sum(rel_unc) / len(rel_unc)), 3) if rel_unc else 0.5
         rows.append(
             {
                 "label": ev.label,
                 "ev": ev,
                 "normalized": normalized,
+                "missing_objectives": sorted(set(active) - set(present)),
                 "composite": round(composite, 4),
-                "confidence": max(0.0, confidence),
+                "confidence": max(0.0, min(1.0, confidence)),
             }
         )
 
@@ -164,6 +221,11 @@ def rank(
                 pareto=row["label"] in front,
                 why=_why(ev, row, active),
                 excluded_reason=excluded_reason,
+                payload={
+                    "missing_objectives": row["missing_objectives"],
+                    "geometry_usable": bool(ev.geometry_usable),
+                    "sequence": ev.sequence,
+                },
             )
         )
 
@@ -176,7 +238,62 @@ def rank(
 
 def _signature(ev) -> str:
     muts = ",".join(sorted(m.get("mutation") or "" for m in getattr(ev, "mutations", [])))
-    return muts or getattr(ev, "sequence", "")[:32]
+    return muts or getattr(ev, "sequence", "")
+
+
+def _candidate_sort_key(candidate: RankedCandidate):
+    return (
+        0 if candidate.passed_filters and not candidate.excluded_reason else 1,
+        -candidate.composite,
+        -candidate.confidence,
+        candidate.rank,
+    )
+
+
+def cluster_candidates(
+    candidates: list[RankedCandidate], threshold: float = 0.90
+) -> list[Cluster]:
+    """Greedily cluster ranked candidates by global-alignment identity.
+
+    Identity is matches divided by alignment length, including internal gaps, so near-identical
+    variants share a diversity bet while a short exact prefix of a long sequence does not.
+    """
+    clusters: list[Cluster] = []
+    for candidate in sorted(candidates, key=_candidate_sort_key):
+        sequence = candidate.payload.get("sequence") or ""
+        if not sequence:
+            sequence = getattr(candidate, "sequence", "") or ""
+        joined = False
+        for cluster in clusters:
+            representative = cluster.representative
+            rep_sequence = representative.payload.get("sequence") or ""
+            if not rep_sequence:
+                rep_sequence = getattr(representative, "sequence", "") or ""
+            if not sequence or not rep_sequence:
+                continue
+            alignment = seqlib.align(sequence, rep_sequence)
+            alignment_length = len(alignment.aligned_a)
+            matches = sum(
+                a == b for a, b in zip(alignment.aligned_a, alignment.aligned_b, strict=False)
+            )
+            identity = matches / alignment_length if alignment_length else 0.0
+            if identity >= threshold:
+                cluster.members.append(candidate)
+                joined = True
+                break
+        if not joined:
+            clusters.append(Cluster(candidate, [candidate]))
+    return clusters
+
+
+def round_robin_clusters(clusters: list[Cluster], top_n: int) -> list[tuple[RankedCandidate, int]]:
+    """Select one candidate from each cluster per pass through the ranked clusters."""
+    selected: list[tuple[RankedCandidate, int]] = []
+    for offset in range(max((len(c.members) for c in clusters), default=0)):
+        for cluster_id, cluster in enumerate(clusters):
+            if offset < len(cluster.members) and len(selected) < top_n:
+                selected.append((cluster.members[offset], cluster_id))
+    return selected
 
 
 def _why(ev, row: dict, active: dict) -> str:
@@ -196,6 +313,11 @@ def _why(ev, row: dict, active: dict) -> str:
     if ev.rationale:
         base += f". Agent rationale: {ev.rationale}"
     return base
+
+
+def why_not(better: RankedCandidate, worse: RankedCandidate, active: dict | None = None) -> str:
+    """Explain why `better` outranks `worse`; used when an agent re-orders the shortlist."""
+    return _why_not(better, worse, active or DEFAULT_OBJECTIVES)
 
 
 def _why_not(better: RankedCandidate, worse: RankedCandidate, active: dict) -> str:

@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     agent_max_attempts: int = 2
     allow_local_simulation: bool = True
 
+    # Research daemon
+    research_daemon_enabled: bool = True
+    research_debounce_seconds: float = 5.0
+    research_tick_seconds: float = 15.0
+    research_acu_limit: int = 3
+    research_max_topics_per_event: int = 4
+
     # Pharmakon
     public_api_base: str = "http://localhost:8000"
     pharma_daemon_frequency: str = "daily"

@@ -36,13 +36,24 @@ export default function ShortlistPanel({
         <span className="badge">
           {econ.shortlist_size} of {econ.candidate_pool} candidates ordered
         </span>
-        <span className="badge devin">
-          {money(econ.savings_usd)} avoided ({econ.savings_pct}%)
-        </span>
+        <span className="badge devin">{money(econ.spend_avoided_usd)} spend avoided</span>
         <span className="badge">shortlist {money(econ.shortlist_cost_usd)}</span>
-        <span className="badge">test-everything {money(econ.test_everything_cost_usd)}</span>
-        <span className="badge">~{econ.expected_hits} expected hits</span>
+        <span className="badge">{money(econ.cost_per_candidate_usd)} per candidate</span>
+        <span className="badge">
+          {pack.validation.measured_hit_rate === null
+            ? "no measured results yet"
+            : `measured hit rate ${(pack.validation.measured_hit_rate * 100).toFixed(0)}% (n=${pack.validation.measured_results})`}
+        </span>
       </div>
+      <p className="hint" style={{ marginTop: 0 }}>
+        {econ.caveat} Excludes: {econ.cost_exclusions.join(", ")}.
+      </p>
+      {!pack.primers_orderable && (
+        <p className="hint">
+          Primers below are designed against a {pack.template_source} — upload your actual plasmid
+          sequence before ordering.
+        </p>
+      )}
       {cycleId && (
         <div className="row" style={{ marginBottom: 12 }}>
           {(["csv", "json", "fasta"] as const).map((fmt) => (
@@ -90,14 +101,25 @@ export default function ShortlistPanel({
                     </div>
                     {item.primers.map((p) => (
                       <div key={p.mutation} className="mono muted">
-                        {p.mutation}: F {p.forward} / R {p.reverse} (Tm {p.tm_c}°C)
+                        {p.mutation}: F {p.forward} / R {p.reverse} (Tm {p.tm_c}°C){" "}
+                        {p.orderable ? "" : `— not orderable: ${p.template_source}`}
                       </div>
                     ))}
                     {item.assay_plan.map((a) => (
                       <div key={a.assay} className="muted">
-                        {a.assay} → {a.predicted_signal} ({money(a.estimated_cost_usd)})
+                        {a.assay} → measure {a.readout} ({money(a.estimated_cost_usd)})
+                        <div className="muted">
+                          tests {a.tests_in_silico_proxy} = {String(a.in_silico_value)}{" "}
+                          {a.in_silico_units}; {a.decision_rule}
+                        </div>
                       </div>
                     ))}
+                    {!item.geometry_usable && (
+                      <div className="muted">
+                        coarse model failed its own compactness/clash check — structure-derived
+                        scores are unreliable for this design
+                      </div>
+                    )}
                     <div className="muted" style={{ marginTop: 4 }}>
                       {item.citations.join(" · ")}
                     </div>
@@ -106,7 +128,7 @@ export default function ShortlistPanel({
               </td>
               <td className="mono">
                 {item.composite_score.toFixed(3)}
-                <div className="muted">conf {item.confidence.toFixed(2)}</div>
+                <div className="muted">conf {item.confidence.toFixed(2)} (uncalibrated)</div>
                 {item.pareto_optimal && <span className="pill ok">pareto</span>}
               </td>
               <td className="mono">{money(item.cost.total_usd)}</td>

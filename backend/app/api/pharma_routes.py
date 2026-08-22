@@ -41,9 +41,9 @@ from app.models import (
     Experiment,
     GateDecision,
     MoleculeCommit,
+    ProgramResearchEvent,
     ProgramRound,
     Project,
-    ResearchEvent,
     User,
     utcnow,
 )
@@ -600,9 +600,9 @@ def list_research(
     user: User = viewer,
 ) -> list[ResearchEventOut]:
     rows = db.scalars(
-        select(ResearchEvent)
-        .where(ResearchEvent.program_id == program_id)
-        .order_by(ResearchEvent.created_at.desc())
+        select(ProgramResearchEvent)
+        .where(ProgramResearchEvent.program_id == program_id)
+        .order_by(ProgramResearchEvent.created_at.desc())
         .limit(limit)
     )
     return [

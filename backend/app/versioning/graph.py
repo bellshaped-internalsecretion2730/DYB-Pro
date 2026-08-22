@@ -37,6 +37,13 @@ def commit_hash(payload: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def structure_digest(content: str | None, key: str | None) -> str:
+    """Digest of the coordinates themselves, falling back to the storage key when absent."""
+    if content:
+        return "c:" + hashlib.sha256(content.encode("utf-8")).hexdigest()[:32]
+    return "k:" + hashlib.sha256((key or "").encode("utf-8")).hexdigest()[:16]
+
+
 def get_branch(db: Session, project_id: str, name: str, create: bool = False) -> Branch | None:
     branch = db.scalar(
         select(Branch).where(Branch.project_id == project_id, Branch.name == name)
@@ -70,25 +77,35 @@ def commit_design(
     citations: list[str] | None = None,
     structure_key: str | None = None,
     structure_source: str = "none",
+    structure_content: str | None = None,
     cycle_id: str | None = None,
     cycle_round: int = 0,
     created_at: datetime | None = None,
 ) -> ProteinCommit:
-    """Create an immutable commit and move the branch head. Idempotent by content hash."""
+    """Create an immutable commit and move the branch head. Idempotent by content hash.
+
+    `structure_content` is the coordinate text itself. Hashing only the storage key made the
+    commit id depend on a filename rather than on the structure: two different sets of coordinates
+    written to the same key hashed identically, and the same coordinates under two keys did not.
+    """
     sequence = seqlib.clean_sequence(sequence)
     parents = sorted(parent_ids or [])
     timestamp = created_at or utcnow()
     payload = {
         "project_id": project_id,
         "sequence": sequence,
-        "structure": hashlib.sha256((structure_key or "").encode()).hexdigest()[:16],
+        "structure": structure_digest(structure_content, structure_key),
+        "structure_source": structure_source,
         "parents": parents,
         "scores": scores or {},
+        "uncertainty": uncertainty or {},
+        "filters": filters or {},
         "agent_role": agent_role,
         "provider": provider,
         "prompt": prompt,
         "citations": sorted(citations or []),
         "mutations": [m.get("mutation") for m in (mutations or [])],
+        "branch": branch,
         "timestamp": canonical_timestamp(timestamp),
         "message": message,
     }
@@ -234,7 +251,8 @@ def _commit_stub(c: ProteinCommit) -> dict:
 
 def branch_from(db: Session, project_id: str, name: str, commit_id: str) -> Branch:
     commit = db.get(ProteinCommit, commit_id)
-    if commit is None:
+    # A commit id from another project must read as unknown here, not as a usable branch point.
+    if commit is None or commit.project_id != project_id:
         raise KeyError(f"unknown commit {commit_id}")
     existing = get_branch(db, project_id, name)
     if existing is not None:
@@ -290,12 +308,14 @@ def merge_branches(
     tokens = [combined[pos]["mutation"] for pos in sorted(combined)]
     merged_seq, applied = seqlib.apply_mutations(base_seq, tokens)
 
-    merged_scores = {}
-    for key in set(a.scores) | set(b.scores):
-        vals = [v for v in (a.scores.get(key), b.scores.get(key)) if isinstance(v, int | float)]
-        if vals:
-            merged_scores[key] = round(sum(vals) / len(vals), 4)
-    merged_scores["merge_estimated"] = 1.0
+    # A recombined sequence has no scores. Averaging the parents' would invent values for a
+    # sequence neither parent has -- mutations are not additive (epistasis) -- and those averages
+    # would then flow into rankings and the history digest as if they had been computed. The
+    # parents' scores are kept for reference only, under keys that cannot be mistaken for scores.
+    merged_scores: dict = {
+        "needs_rescoring": 1.0,
+        "parent_scores": {"ours": dict(a.scores or {}), "theirs": dict(b.scores or {})},
+    }
 
     return commit_design(
         db,
@@ -308,10 +328,13 @@ def merge_branches(
         mutations=applied,
         scores=merged_scores,
         filters={"passed": False, "failed": ["requires_rescoring"], "checks": []},
+        uncertainty={"needs_rescoring": True},
         rationale=(
             f"Recombination of {len(ours_muts)} mutation(s) from '{ours}' and "
             f"{len(theirs_muts)} from '{theirs}' over common ancestor "
-            f"{(base_id or 'root')[:12]}. Scores are parent averages and must be re-evaluated."
+            f"{(base_id or 'root')[:12]}. This sequence has not been scored: run a cycle on this "
+            f"branch to evaluate it. Combining mutations is not additive, so the parents' scores "
+            f"do not carry over."
         ),
         agent_role="version-control",
         provider="dyb-pro",

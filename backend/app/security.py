@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import DesignCycle, UsageRecord, User, utcnow
+from app.models import DesignCycle, Project, UsageRecord, User, utcnow
 
 ROLE_RANK = {"viewer": 0, "scientist": 1, "admin": 2}
 
@@ -43,6 +43,38 @@ def require_role(minimum: str):
         return user
 
     return _dep
+
+
+def can_access_project(user: User, project: Project) -> bool:
+    """Read access. Every member of the workspace may read, which is what the viewer role is for."""
+    del project
+    return ROLE_RANK[user.role] >= ROLE_RANK["viewer"]
+
+
+def can_write_project(user: User, project: Project) -> bool:
+    """Write access: the project's own scientist, or an admin.
+
+    Read is workspace-wide but writes are not: uploading into, running cycles on, branching or
+    merging someone else's lineage would corrupt their provenance, so only the owner (or an admin)
+    may mutate a project. Projects created before ownership was recorded have no owner and stay
+    writable rather than becoming read-only orphans.
+    """
+    return bool(
+        user.role == "admin" or project.owner_id is None or project.owner_id == user.id
+    )
+
+
+def require_project(db: Session, user: User, project_id: str, write: bool = False) -> Project:
+    """Load a project the caller is allowed to use, 404 when it does not exist."""
+    project = db.get(Project, project_id)
+    if project is None or not can_access_project(user, project):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "project not found")
+    if write and not can_write_project(user, project):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "project belongs to another scientist; ask its owner or an admin",
+        )
+    return project
 
 
 def usage_snapshot(db: Session, user: User) -> dict:

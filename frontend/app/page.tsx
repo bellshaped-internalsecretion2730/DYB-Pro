@@ -9,6 +9,7 @@ import DatabaseSearch from "@/components/DatabaseSearch";
 import FoldStrip from "@/components/FoldStrip";
 import ProteinViewer from "@/components/ProteinViewer";
 import ProviderBadge from "@/components/ProviderBadge";
+import ResearchPane from "@/components/ResearchPane";
 import ShortlistPanel from "@/components/ShortlistPanel";
 import StructureViewer from "@/components/StructureViewer";
 import VersionDag from "@/components/VersionDag";
@@ -22,12 +23,20 @@ import {
   type GraphNode,
   type Observation,
   type Project,
+  type ProjectResearch,
   type Provider,
   type Shortlist,
 } from "@/lib/api";
 
 const TERMINAL = ["committed", "partial", "failed", "cancelled"];
-type CenterTab = "structure" | "lineage" | "shortlist" | "log" | "3d-structure" | "databases";
+type CenterTab =
+  | "structure"
+  | "lineage"
+  | "shortlist"
+  | "research"
+  | "log"
+  | "3d-structure"
+  | "databases";
 
 export default function Workspace() {
   const [provider, setProvider] = useState<Provider | null>(null);
@@ -40,6 +49,7 @@ export default function Workspace() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [timeline, setTimeline] = useState<Observation[]>([]);
   const [shortlist, setShortlist] = useState<Shortlist | null>(null);
+  const [research, setResearch] = useState<ProjectResearch | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
@@ -70,14 +80,16 @@ export default function Workspace() {
   }, [loadProjects]);
 
   const refreshProject = useCallback(async (id: string) => {
-    const [p, g, t] = await Promise.all([
+    const [p, g, t, r] = await Promise.all([
       api.get<Project>(`/projects/${id}`),
       api.get<Graph>(`/projects/${id}/graph`),
       api.get<Observation[]>(`/projects/${id}/timeline?limit=80`),
+      api.get<ProjectResearch>(`/projects/${id}/research`),
     ]);
     setProject(p);
     setGraph(g);
     setTimeline(t);
+    setResearch(r);
   }, []);
 
   const attachCycle = useCallback(async (c: Cycle) => {
@@ -96,6 +108,7 @@ export default function Workspace() {
     async (p: Project) => {
       setProject(p);
       setShortlist(null);
+      setResearch(null);
       setAgents([]);
       setBrief(p.goal);
       setSelectedId(null);
@@ -179,6 +192,24 @@ export default function Workspace() {
       });
       setCycles((rows) => [created, ...rows.filter((c) => c.id !== created.id)]);
       await attachCycle(created);
+      // Eager (inline) execution returns an already-terminal cycle, so the poller never runs and
+      // the commit/cycle counters and DAG would keep their pre-cycle values.
+      await refreshProject(project.id);
+      await loadProjects();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function triggerResearch() {
+    if (!project) return;
+    setBusy("research");
+    setError(null);
+    try {
+      await api.post(`/projects/${project.id}/research`);
+      await refreshProject(project.id);
     } catch (e) {
       fail(e);
     } finally {
@@ -333,6 +364,7 @@ export default function Workspace() {
                     ["structure", "protein viewer"],
                     ["lineage", "version DAG"],
                     ["shortlist", "wet-lab shortlist"],
+                    ["research", "research daemon"],
                     ["log", "observation log"],
                     ["3d-structure", "3d structure"],
                     ["databases", "databases"],
@@ -404,6 +436,24 @@ export default function Workspace() {
                 <section className="panel">
                   <h2>Wet-lab shortlist</h2>
                   <ShortlistPanel shortlist={shortlist} cycleId={cycle?.id ?? null} />
+                </section>
+              </div>
+            )}
+
+            {tab === "research" && (
+              <div className="center-body">
+                <section className="panel">
+                  <h2>Research daemon</h2>
+                  <p className="hint">
+                    Always-live loop, separate from design cycles: it watches commits, uploads and
+                    measured results, reuses cached research, and re-estimates proxy-vs-measurement
+                    drift.
+                  </p>
+                  <ResearchPane
+                    research={research}
+                    onTrigger={triggerResearch}
+                    busy={busy === "research"}
+                  />
                 </section>
               </div>
             )}

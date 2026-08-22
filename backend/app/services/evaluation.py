@@ -17,7 +17,7 @@ CITATIONS = [
     "Henikoff & Henikoff 1992 (BLOSUM62)",
     "Chou & Fasman 1978 (secondary structure propensity)",
     "Guerois et al. 2002 (empirical stability terms)",
-    "Sormanni et al. 2015 (CamSol solubility)",
+    "Sormanni et al. 2015 (CamSol solubility; ingredients only, weights not fitted)",
     "Tartaglia & Vendruscolo 2008 (aggregation propensity)",
     "Kim & Hummer 2008 (coarse-grained interaction potential)",
     "Katchalski-Katzir et al. 1992 (rigid-body shape matching)",
@@ -35,6 +35,7 @@ class Candidate:
     rationale: str = ""
     agent_role: str = "sequence"
     citations: list[str] = field(default_factory=list)
+    source_run_id: str | None = None  # the AgentRun that actually produced this candidate
 
     def resolved(self) -> tuple[str, list[dict]]:
         if self.mutations:
@@ -59,6 +60,7 @@ class Evaluation:
     structure_source: str
     citations: list[str]
     rationale: str
+    geometry_usable: bool = True
 
     def as_dict(self) -> dict:
         return {
@@ -70,6 +72,7 @@ class Evaluation:
             "filters": self.filters,
             "profile": self.profile,
             "structure_source": self.structure_source,
+            "geometry_usable": self.geometry_usable,
             "citations": self.citations,
             "rationale": self.rationale,
         }
@@ -85,7 +88,8 @@ def evaluate_candidate(
     model = folding.fold_sequence(seq, template=parent_structure, name=candidate.label)
     prof = dev.profile(seq, structure=model, mutations=mutations)
     geometry = structlib.summary(model)
-    relaxation = dock.relax(model, steps=12)
+    relaxation = dock.minimize_geometry(model, steps=12)
+    geometry_usable = bool(geometry["geometry_usable"])
 
     binding = None
     if target_structure is not None:
@@ -102,8 +106,12 @@ def evaluate_candidate(
         "compactness": geometry["compactness"],
         "strain_energy": relaxation["final_energy"],
     }
+    # Spread of the heuristic, expressed on the same arbitrary scale as the score itself. These
+    # are declared method uncertainties (how much the heuristic moves under its own assumptions),
+    # not calibrated error bars against measurements -- nothing here has been fitted to data.
+    structure_penalty = 1.0 if geometry_usable else 2.0
     uncertainty = {
-        "ddg_proxy": round(0.35 + 0.15 * len(mutations), 3),
+        "ddg_proxy": round((0.35 + 0.15 * len(mutations)) * structure_penalty, 3),
         "solubility": 0.12,
         "aggregation": 0.05,
         "immunogenicity": 0.4,
@@ -111,7 +119,7 @@ def evaluate_candidate(
     if binding is not None:
         scores["binding_score"] = binding.binding_score
         scores["interface_contacts"] = float(binding.contacts)
-        uncertainty["binding_score"] = binding.uncertainty
+        uncertainty["binding_score"] = round(binding.uncertainty * structure_penalty, 3)
 
     filters = dev.apply_filters(prof, filter_config)
     return Evaluation(
@@ -124,13 +132,18 @@ def evaluate_candidate(
         profile={
             **prof,
             "geometry": geometry,
-            "relaxation": relaxation,
+            "minimization": relaxation,
             "docking": binding.as_dict() if binding is not None else None,
+            "uncertainty_meaning": (
+                "declared method spread on each score's own arbitrary scale; not calibrated "
+                "against experimental measurements"
+            ),
         },
         structure_pdb=model.to_pdb(),
         structure_source=model.source,
         citations=sorted(set(candidate.citations) | set(CITATIONS)),
         rationale=candidate.rationale,
+        geometry_usable=geometry_usable,
     )
 
 
@@ -166,6 +179,7 @@ def evaluate_all(
                     structure_source="none",
                     citations=[],
                     rationale=f"rejected: {exc}",
+                    geometry_usable=False,
                 )
             )
     return out

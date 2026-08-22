@@ -11,17 +11,18 @@ import re
 from dataclasses import dataclass, field
 
 from app.toolkit import sequence as seqlib
-from app.toolkit.constants import CHARGE_AT_PH7, HYDROPATHY
+from app.toolkit.constants import CHARGE_AT_PH7, HELIX_PROPENSITY, HYDROPATHY
 from app.toolkit.structure import Structure, relative_exposure
 
-# Liability motifs (regexes on the protein sequence).
+# Liability motifs (regexes on the protein sequence). Names describe what the regex actually
+# matches -- a motif hit is a site worth checking, not evidence that the modification occurs.
 LIABILITY_MOTIFS = {
-    "n_glycosylation": r"N[^P][ST]",
-    "deamidation_NG": r"N[GS]",
-    "isomerization_DG": r"D[GS]",
-    "oxidation_MW": r"[MW]",
-    "protease_KK_RR": r"(KK|RR|KR|RK)",
-    "unpaired_cysteine": r"C",
+    "n_glycosylation_sequon": r"N[^P][ST]",
+    "deamidation_NG_NS": r"N[GS]",
+    "isomerization_DG_DS": r"D[GS]",
+    "oxidation_prone_MW": r"[MW]",
+    "protease_dibasic": r"(KK|RR|KR|RK)",
+    "cysteine_positions": r"C",
 }
 
 # Buried-hydrophobic tolerance: substituting a large hydrophobic in the core is destabilizing.
@@ -54,7 +55,8 @@ def aggregation_propensity(seq: str, window: int = 7) -> Metric:
     """Hydrophobic-patch scan: fraction of windows whose mean hydropathy exceeds +1.5.
 
     Follows the aggregation-prone-region logic of window-based predictors (Tartaglia &
-    Vendruscolo, 2008): contiguous apolar stretches with low net charge drive aggregation.
+    Vendruscolo, 2008): contiguous apolar stretches with low net charge drive aggregation. It is
+    a sequence-only flag for where to look, not a predicted aggregation rate or % monomer.
     """
     seq = seqlib.clean_sequence(seq)
     if len(seq) < window:
@@ -83,10 +85,11 @@ def aggregation_propensity(seq: str, window: int = 7) -> Metric:
 
 
 def solubility(seq: str) -> Metric:
-    """CamSol-like intrinsic solubility proxy from charge, hydropathy and aggregation load.
+    """Intrinsic solubility index from charge density, hydropathy and aggregation load.
 
-    Positive = more soluble. Combines net charge magnitude (favourable), GRAVY (unfavourable
-    when hydrophobic) and the aggregation-prone fraction.
+    Higher = expected to be more soluble. CamSol-inspired in its ingredients only: the weights
+    are hand-chosen, not fitted, so the value is in arbitrary units and cannot be read as a
+    predicted mg/mL or as CamSol's score.
     """
     seq = seqlib.clean_sequence(seq)
     charge = abs(seqlib.net_charge(seq)) / max(1, len(seq)) * 100.0
@@ -96,15 +99,18 @@ def solubility(seq: str) -> Metric:
     return Metric(
         name="solubility",
         value=value,
-        method="charge/GRAVY/aggregation composite (CamSol-like)",
+        unit="arbitrary units (uncalibrated)",
+        method="charge/GRAVY/aggregation composite (CamSol-inspired, unfitted weights)",
         detail={"charge_density": round(charge, 3), "gravy": gravy, "aggregation": agg},
     )
 
 
 def immunogenicity(seq: str) -> Metric:
-    """MHC-II-like risk: count of 9-mers with hydrophobic P1/P4/P6/P9 anchor pattern.
+    """Density of 9-mers matching a generic MHC-II P1/P4/P6/P9 anchor pattern, per 100 aa.
 
-    Anchor-motif scanning as in MHC-II binding-core heuristics; reported as risk per 100 aa.
+    This is an allele-agnostic motif count, not a T-cell epitope prediction: it has no allele
+    coverage, no binding affinity and no HLA frequency weighting. Use it to compare designs of
+    the same protein, never to claim a protein is (non-)immunogenic.
     """
     seq = seqlib.clean_sequence(seq)
     anchors_p1 = set("FWYLIVM")
@@ -131,15 +137,32 @@ def immunogenicity(seq: str) -> Metric:
     )
 
 
+# Weights of the per-residue terms of the destabilization score. They are shape parameters of a
+# ranking heuristic, not fitted free-energy coefficients.
+DDG_WEIGHTS = {
+    "packing": 0.9,  # buried volume increase -> strain; decrease -> relief (signed)
+    "burial_polarity": 0.35,  # losing apolar character in the core
+    "helix_propensity": 0.5,
+    "proline": 1.2,
+    "glycine": 0.4,
+}
+
+
 def ddg_proxy(
     wt_seq: str,
     mutations: list[dict],
     structure: Structure | None = None,
 ) -> Metric:
-    """Folding-stability change proxy (kcal/mol-like, negative = stabilizing).
+    """Destabilization risk score for a mutation set. Higher = more likely destabilizing.
 
-    Combines a BLOSUM62 substitution penalty, side-chain volume change weighted by burial, and
-    a helix-propensity term — the ingredients used by classical empirical ΔΔG estimators.
+    Antisymmetric by construction: every term is a burial-weighted difference of a per-residue
+    property, so ``score(X->Y) == -score(Y->X)``. A free-energy difference has that property; the
+    symmetric BLOSUM substitution score does not, so BLOSUM is reported as context only and does
+    not enter the value.
+
+    The value is in arbitrary units and is **not** calibrated against experimental ΔΔG: use it to
+    order candidates, never to predict a ΔΔG or a Tm shift. Volume and helix propensities follow
+    the ingredients of empirical ΔΔG estimators (Guerois 2002) without their fitted weights.
     """
     wt_seq = seqlib.clean_sequence(wt_seq)
     exposure = relative_exposure(structure) if structure is not None else None
@@ -151,45 +174,70 @@ def ddg_proxy(
         buried = 0.5
         if exposure is not None and 0 <= idx < len(exposure):
             buried = 1.0 - exposure[idx]
-        sub_pen = -0.25 * seqlib.sub_score(wt, mt)
-        vol_pen = abs(VOLUME[mt] - VOLUME[wt]) / 100.0 * (0.8 + 1.2 * buried)
-        polarity_pen = 0.0
-        if buried > 0.6 and HYDROPATHY[mt] < -1.0 <= HYDROPATHY[wt]:
-            polarity_pen = 0.9  # burying a polar/charged residue
-        contrib = round(sub_pen + vol_pen + polarity_pen, 3)
+        dvol = (VOLUME[mt] - VOLUME[wt]) / 100.0
+        volume_term = DDG_WEIGHTS["packing"] * dvol * buried
+        # signed: burying a more polar residue costs, exposing it refunds the same amount
+        polarity_term = (
+            DDG_WEIGHTS["burial_polarity"] * buried * (HYDROPATHY[wt] - HYDROPATHY[mt])
+        )
+        helix_term = DDG_WEIGHTS["helix_propensity"] * (
+            HELIX_PROPENSITY[wt] - HELIX_PROPENSITY[mt]
+        )
+        backbone_term = DDG_WEIGHTS["proline"] * (
+            (1.0 if mt == "P" else 0.0) - (1.0 if wt == "P" else 0.0)
+        ) + DDG_WEIGHTS["glycine"] * ((1.0 if mt == "G" else 0.0) - (1.0 if wt == "G" else 0.0))
+        contrib = round(volume_term + polarity_term + helix_term + backbone_term, 3)
         total += contrib
         per_mut.append(
             {
                 "mutation": f"{wt}{pos}{mt}",
                 "ddg": contrib,
                 "burial": round(buried, 3),
-                "substitution_penalty": round(sub_pen, 3),
-                "volume_penalty": round(vol_pen, 3),
-                "polarity_penalty": polarity_pen,
+                "volume_term": round(volume_term, 3),
+                "polarity_term": round(polarity_term, 3),
+                "helix_term": round(helix_term, 3),
+                "backbone_term": round(backbone_term, 3),
+                "cavity_risk": round(max(0.0, -dvol) * buried, 3),
+                "blosum62": seqlib.sub_score(wt, mt),
             }
         )
     return Metric(
         name="ddg_proxy",
         value=round(total, 3),
-        unit="kcal/mol (proxy)",
-        method="BLOSUM62 + burial-weighted volume/polarity terms",
-        detail={"per_mutation": per_mut, "structure_aware": structure is not None},
+        unit="arbitrary units (uncalibrated)",
+        method="antisymmetric burial-weighted volume/polarity/helix/backbone terms",
+        detail={
+            "per_mutation": per_mut,
+            "structure_aware": structure is not None,
+            "structure_source": structure.source if structure is not None else None,
+            "cavity_risk": round(sum(m["cavity_risk"] for m in per_mut), 3),
+            "interpretation": (
+                "relative destabilization risk for ordering candidates; not kcal/mol, not a Tm "
+                "prediction, additive across sites (epistasis is not modelled). Shrinking a "
+                "buried side chain scores as relief, so read `cavity_risk` alongside the value."
+            ),
+        },
     )
 
 
 def liabilities(seq: str) -> dict:
+    """Sites worth checking, found by motif regex. A hit is a flag, not a measured liability."""
     seq = seqlib.clean_sequence(seq)
     found: dict[str, list[int]] = {}
     for label, pattern in LIABILITY_MOTIFS.items():
         hits = [m.start() + 1 for m in re.finditer(pattern, seq)]
         if hits:
             found[label] = hits[:20]
-    free_cys = seq.count("C") % 2 == 1
+    odd_cys = seq.count("C") % 2 == 1
     return {
         "motifs": found,
-        "free_cysteine": free_cys,
+        "odd_cysteine_count": odd_cys,
         "cysteine_count": seq.count("C"),
-        "method": "motif regex scan (N-glyc, deamidation, isomerization, oxidation, protease)",
+        "method": "motif regex scan (sequence only; solvent exposure and pH are not considered)",
+        "caveat": (
+            "N-glycosylation only occurs in eukaryotic hosts; oxidation/deamidation depend on "
+            "exposure and formulation. Cysteine pairing is inferred from parity, not geometry."
+        ),
     }
 
 
@@ -218,12 +266,14 @@ DEFAULT_FILTERS = {
     "min_solubility": -0.5,
     "max_aggregation": 0.30,
     "max_immunogenicity": 6.0,
-    "max_free_cysteine": True,  # a single unpaired Cys is a fail
+    "reject_odd_cysteine_count": True,  # an odd Cys count leaves one unpaired
     # Solubility collapses when the formulation pH sits on the isoelectric point, so the filter
     # is a keep-out band around the working pH -- not a preference for basic proteins.
     "working_ph": 7.4,
     "min_pi_offset": 1.0,
     "pi_extremes": (3.5, 11.0),
+    # Screening cut-off on the uncalibrated destabilization risk score, chosen so that a single
+    # large core substitution passes and a stack of them does not. It is not a kcal/mol threshold.
     "max_ddg": 3.0,
 }
 
@@ -284,18 +334,18 @@ def apply_filters(prof: dict, config: dict | None = None) -> dict:
         "purification; extreme pI needs a non-standard buffer",
     )
     add(
-        "free_cysteine",
-        not (cfg["max_free_cysteine"] and prof["liabilities"]["free_cysteine"]),
+        "odd_cysteine_count",
+        not (cfg["reject_odd_cysteine_count"] and prof["liabilities"]["odd_cysteine_count"]),
         prof["liabilities"]["cysteine_count"],
         "even count",
-        "an unpaired cysteine drives scrambling and covalent dimers",
+        "an odd cysteine count leaves a free thiol that drives scrambling and covalent dimers",
     )
     add(
         "stability",
         prof["ddg"]["value"] <= cfg["max_ddg"],
         prof["ddg"]["value"],
         cfg["max_ddg"],
-        "predicted destabilization beyond the tolerated window",
+        "destabilization risk score above the screening cut-off (arbitrary units, uncalibrated)",
     )
     failed = [c["name"] for c in checks if not c["passed"]]
     return {

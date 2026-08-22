@@ -7,21 +7,33 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import DesignCycle, Observation, Project, ProteinCommit
+from app.models import DesignCycle, MeasuredResult, Observation, Project, ProteinCommit
+
+HISTORY_COMMIT_SCAN = 200
 
 
 def history_digest(db: Session, project: Project, max_commits: int = 12) -> dict:
     """Everything a new agent must know before proposing anything.
 
     Includes: prior cycles and their outcome, best/worst commits by composite score, mutations
-    already rejected (with the reason), and open questions carried forward.
+    already rejected (with the reason), measured wet-lab results, and open questions carried
+    forward. `max_commits` caps how many designs are quoted back into the prompt, while the ledger
+    and exclusions are still built from the last `HISTORY_COMMIT_SCAN` commits.
     """
     commits = list(
         db.scalars(
             select(ProteinCommit)
             .where(ProteinCommit.project_id == project.id)
             .order_by(ProteinCommit.created_at.desc())
-            .limit(200)
+            .limit(HISTORY_COMMIT_SCAN)
+        )
+    )
+    measured = list(
+        db.scalars(
+            select(MeasuredResult)
+            .where(MeasuredResult.project_id == project.id)
+            .order_by(MeasuredResult.created_at.desc())
+            .limit(60)
         )
     )
     cycles = list(
@@ -43,10 +55,11 @@ def history_digest(db: Session, project: Project, max_commits: int = 12) -> dict
     def composite(commit: ProteinCommit) -> float:
         return float(commit.scores.get("composite_score", 0.0) or 0.0)
 
+    quote_limit = max(1, max_commits // 2)
     scored = [c for c in commits if c.scores]
     scored.sort(key=composite, reverse=True)
-    best = scored[:5]
-    worst = [c for c in scored if c.filters and not c.filters.get("passed")][:5]
+    best = scored[:quote_limit]
+    worst = [c for c in scored if c.filters and not c.filters.get("passed")][:quote_limit]
 
     rejected: dict[str, str] = {}
     for commit in commits:
@@ -112,6 +125,19 @@ def history_digest(db: Session, project: Project, max_commits: int = 12) -> dict
         "exclusions": rejected,
         "mutation_ledger": dict(sorted(tried.items(), key=lambda kv: -kv[1]["seen"])[:40]),
         "open_questions": open_questions,
+        "measured_results": [
+            {
+                "commit": r.commit_id[:12],
+                "assay": r.assay,
+                "objective": r.objective,
+                "value": r.value,
+                "unit": r.unit,
+                "outcome": r.outcome,
+                "origin": r.origin,
+                "notes": r.notes[:200],
+            }
+            for r in measured[:20]
+        ],
         "recent_observations": [
             {"kind": o.kind, "role": o.role, "summary": o.summary[:220]} for o in observations[:15]
         ],
@@ -132,7 +158,10 @@ def digest_to_prompt(digest: dict) -> str:
         for c in digest["cycle_history"]:
             lines.append(f"  - round {c['round']} [{c['status']}]: {c['summary'] or c['brief']}")
     if digest["best_designs"]:
-        lines.append("\nBest designs so far (highest composite score first):")
+        lines.append(
+            "\nHighest-scoring designs so far (composite score of uncalibrated proxies, "
+            "comparable across cycles because the scales are fixed):"
+        )
         for d in digest["best_designs"]:
             muts = "+".join(m for m in d["mutations"] if m) or "parent"
             lines.append(
@@ -156,6 +185,20 @@ def digest_to_prompt(digest: dict) -> str:
                 f"  - {token}: tried {info['seen']}x, best composite "
                 f"{info['best_composite']}, outcomes {set(info['outcomes'])}"
             )
+    measured = digest.get("measured_results") or []
+    if measured:
+        lines.append("\nMeasured wet-lab results (ground truth; outrank every in-silico score):")
+        for r in measured:
+            origin = "" if r["origin"] == "measured" else f" [{r['origin']}]"
+            lines.append(
+                f"  - {r['commit']} {r['assay']}: {r['value']} {r['unit']} -> {r['outcome']}"
+                f"{origin} {r['notes']}"
+            )
+    else:
+        lines.append(
+            "\nNo measured wet-lab results have been ingested for this project: every score below "
+            "is an uncalibrated in-silico proxy."
+        )
     if digest["open_questions"]:
         lines.append("\nOpen questions carried forward:")
         lines.extend(f"  - {q}" for q in digest["open_questions"])

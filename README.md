@@ -65,7 +65,7 @@ displayed:
 ## Development
 
 ```bash
-# backend: 50 tests, no network and no credentials needed
+# backend: no network and no credentials needed
 cd backend && pip install -r requirements.txt && pytest && ruff check .
 
 # api only (SQLite + local artifact storage fallback)
@@ -75,9 +75,58 @@ uvicorn app.main:app --reload
 cd frontend && npm install && npm run typecheck && npm run build
 ```
 
-The compose stack runs Postgres, Redis, MinIO, the API, a Celery worker and the Next.js web app.
-Running the API alone falls back to SQLite, local artifact storage and inline (eager) cycle
-execution, so nothing extra is required for development.
+The compose stack runs Postgres, Redis, MinIO, the API, a Celery worker for design cycles, a
+separate worker + beat for the research daemon, and the Next.js web app. Running the API alone
+falls back to SQLite, local artifact storage and inline (eager) execution, so nothing extra is
+required for development.
+
+## The research daemon
+
+Design cycles run on request; research runs continuously. Anything that changes a project — an
+upload, a committed design, an ingested measurement, or `POST /api/projects/{id}/research` — writes
+a durable `queued` research event. A dedicated worker (`research` queue, its own beat tick) picks
+it up, diffs the project against the last completed event, reuses cached research, researches only
+what is new, recomputes the toolkit metrics on the current head and re-estimates drift.
+
+* **No trigger is dropped, and no trigger fans out.** Triggers arriving while an event is still
+  queued are merged into it (`triggers`, `coalesced`), so a cycle that commits thirteen designs
+  produces one research event, and an event survives a worker restart because it lives in the
+  database rather than in a subscription.
+* **The cache is append-only.** Research is keyed by topic (`mutation:T25V`, `liability:N-glyc`,
+  `drift:stability`), so a question answered for v2 is reused for v9 — visible as `cache_hits`,
+  `cache_writes` and per-note `reuse_count`. Notes are never deleted or overwritten.
+* **One session per project, not per change.** With `DEVIN_API_KEY` set, the daemon keeps its own
+  long-lived Devin session per project and messages it. Without one it runs the labelled
+  `local-simulation` provider, which restates published heuristics and searches nothing — the
+  provider is recorded on every event and note, so a simulated finding can never be mistaken for a
+  literature search.
+* Failed events stay in the list as `failed` with their error, rather than disappearing.
+
+Tune with `RESEARCH_DAEMON_ENABLED`, `RESEARCH_DEBOUNCE_SECONDS`, `RESEARCH_TICK_SECONDS`,
+`RESEARCH_ACU_LIMIT` and `RESEARCH_MAX_TOPICS_PER_EVENT`.
+
+## What DYB Pro does not know
+
+Every in-silico number in DYB Pro is an **uncalibrated proxy**, reported in arbitrary units, and
+the product refuses to dress them up:
+
+* Folded structures are **coarse CA-only models** (`model:` provenance), not experimental
+  structures. Burial, contacts, compactness and docking read off that model, and each design
+  carries a `geometry_usable` flag when its own compactness/clash check fails.
+* The stability score is a directional, antisymmetric **risk proxy** — not kcal/mol, not a Tm
+  shift; epistasis between sites is not modelled.
+* Docking scores order candidates against one fixed receptor. They are not affinities and cannot
+  be converted to a KD. `minimize_geometry` is steepest descent on a soft potential, not MD.
+* The wet-lab pack says what to build and what to **measure**. It predicts no assay outcome and
+  reports no probability that a design validates.
+* Cost figures are indicative list prices for consumables/services, excluding labour and
+  overheads. Avoided spend is the cost of builds you did not order — not a validated saving.
+* Hit rates and proxy/measurement agreement (Kendall tau) appear only after you ingest measured
+  results (`POST /api/projects/{id}/results` or a results CSV), and stay per-project and
+  small-sample. Measurements never overwrite a commit's scores; drift stays inspectable at
+  `GET /api/projects/{id}/calibration`.
+* The daemon researches and re-estimates drift; it does not itself propose or commit designs, and
+  its drift numbers are the same small-sample calibration reported above.
 
 ## Private previews and public structure tools
 

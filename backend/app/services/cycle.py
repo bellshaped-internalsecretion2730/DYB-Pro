@@ -18,7 +18,7 @@ from app.devin import prompts as promptlib
 from app.devin.runner import PROVIDER_DEVIN, AgentSupervisor, LaunchSpec
 from app.devin.schemas import PLAN_SCHEMA, ROLES, schema_for
 from app.models import AgentRun, Artifact, DesignCycle, Observation, Project, ProteinCommit, utcnow
-from app.services import analysis, learning, ranking, wetlab
+from app.services import analysis, calibration, learning, ranking, research, wetlab
 from app.services.evaluation import Candidate, Evaluation, evaluate_all
 from app.storage import store
 from app.toolkit import developability as dev
@@ -78,11 +78,15 @@ def build_evidence(
             **geometry,
             "source": model.source,
             "relative_exposure": [round(v, 3) for v in structlib.relative_exposure(model)],
-            "is_model": model.source.startswith("model"),
+            "is_model": structlib.is_model(model),
+            "geometry_usable": structlib.geometry_usable(model),
         },
         "notes": [
             "All values are deterministic in-silico proxies from DYB Pro's open toolkit.",
-            "Coarse models are not experimental structures.",
+            "Coarse models are not experimental structures; burial, contacts and docking read off "
+            "a generated CA trace describe the model, not the protein.",
+            "No score here is calibrated against measurements: use them to order candidates, not "
+            "to predict assay outcomes.",
         ],
     }
     if target is not None:
@@ -98,7 +102,7 @@ def build_evidence(
 
 
 def _candidates_from_output(
-    role: str, output: dict, parent_sequence: str
+    role: str, output: dict, parent_sequence: str, source_run_id: str | None = None
 ) -> list[Candidate]:
     out: list[Candidate] = []
     raw = list(output.get("candidates") or [])
@@ -126,16 +130,22 @@ def _candidates_from_output(
                 rationale=str(rec.get("rationale") or "")[:2000],
                 agent_role=role,
                 citations=[str(c) for c in (rec.get("citations") or [])],
+                source_run_id=source_run_id,
             )
         )
     return out
 
 
 def _dedupe_candidates(candidates: list[Candidate]) -> list[Candidate]:
+    """Drop duplicate proposals, keyed on the *whole* design.
+
+    Truncating the key to the first 64 residues silently discarded distinct designs from different
+    agents whenever they shared a prefix, which is the normal case for point mutants of one parent.
+    """
     seen: set[str] = set()
     unique: list[Candidate] = []
     for cand in candidates:
-        key = ",".join(sorted(cand.mutations)) or (cand.sequence or "")[:64]
+        key = ",".join(sorted(cand.mutations)) or (cand.sequence or "")
         if not key or key in seen:
             continue
         seen.add(key)
@@ -147,6 +157,42 @@ def _dedupe_candidates(candidates: list[Candidate]) -> list[Candidate]:
         cand.label = label
         unique.append(cand)
     return unique[:MAX_CANDIDATES]
+
+
+def _apply_agent_ordering(ranked: list, ordering: list) -> list:
+    """Re-order candidates according to the ranking agent, within filter tiers.
+
+    The agent was previously asked for an ordering and only its free-text reasons were kept, so
+    its judgement never reached the shortlist. Candidates it did not mention keep their
+    deterministic order behind the ones it did, and designs failing hard filters stay last: an
+    agent cannot promote a design past a developability filter.
+    """
+    if not ordering:
+        return ranked
+    priority: dict[str, int] = {}
+    for index, item in enumerate(ordering):
+        label = str(item.get("label") or "").strip()
+        if label and label not in priority:
+            priority[label] = index
+    if not priority:
+        return ranked
+    fallback = len(priority)
+    reordered = sorted(
+        ranked,
+        key=lambda c: (
+            0 if c.passed_filters else 1,
+            priority.get(c.label, fallback),
+            c.rank,
+        ),
+    )
+    for position, cand in enumerate(reordered, start=1):
+        cand.rank = position
+        cand.payload["agent_ordered"] = cand.label in priority
+    for i, cand in enumerate(reordered[:-1]):
+        cand.why_not_next = ranking.why_not(cand, reordered[i + 1])
+    if reordered:
+        reordered[-1].why_not_next = "lowest-ranked candidate in this cycle"
+    return reordered
 
 
 def _observe(
@@ -213,6 +259,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
         db.commit()
         return cycle
     parent = db.get(ProteinCommit, branch.head_commit_id)
+    previous_head = branch.head_commit_id
 
     parent_structure = load_structure(db, parent)
     target = target_structure(project)
@@ -350,7 +397,9 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
         candidates: list[Candidate] = []
         for run in runs:
             output = run.structured_output or {}
-            found = _candidates_from_output(run.role, output, parent.sequence)
+            found = _candidates_from_output(
+                run.role, output, parent.sequence, source_run_id=run.id
+            )
             candidates.extend(found)
             _observe(
                 db,
@@ -395,7 +444,8 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
             candidates, target_structure=target, parent_structure=parent_structure
         )
         by_label: dict[str, Evaluation] = {e.label: e for e in evaluations}
-        role_by_label = {c.label: c.agent_role for c in candidates}
+        candidate_by_label = {c.label: c for c in candidates}
+        runs_by_id = {r.id: r for r in runs}
         ranked = ranking.rank(evaluations, exclusions=exclusions)
 
         ranking_run: AgentRun | None = None
@@ -440,6 +490,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
             for cand in ranked:
                 if cand.label in agent_reasons:
                     cand.payload["agent_reason"] = agent_reasons[cand.label]
+            ranked = _apply_agent_ordering(ranked, triage.get("ordering") or [])
             for excl in triage.get("exclusions") or []:
                 label = str(excl.get("target"))
                 for cand in ranked:
@@ -470,8 +521,14 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                     {"label": cand.label},
                 )
                 continue
-            role = role_by_label.get(cand.label, "sequence")
-            source_run = next((r for r in runs if r.role == role), None)
+            source_candidate = candidate_by_label.get(cand.label)
+            role = source_candidate.agent_role if source_candidate else "sequence"
+            # Provenance must point at the run that produced *this* candidate: picking the first
+            # run with a matching role attributed the design to the wrong session whenever two
+            # agents shared a role.
+            source_run = (
+                runs_by_id.get(source_candidate.source_run_id) if source_candidate else None
+            )
             mutation_summary = "+".join(m.get("mutation") for m in ev.mutations) or "no change"
             structure_key = _store_structure(project.id, f"{cycle.id[:8]}-{cand.label}", ev.structure_pdb, db)
             commit = commit_design(
@@ -495,6 +552,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                 citations=ev.citations,
                 structure_key=structure_key,
                 structure_source=ev.structure_source,
+                structure_content=ev.structure_pdb,
                 cycle_id=cycle.id,
                 cycle_round=cycle.round,
             )
@@ -509,13 +567,24 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                     role=role,
                 )
 
-        # the branch head should be the best passing design of this cycle
+        # The branch head is the best passing design of this cycle, or the previous head when
+        # nothing passed: committing a design moves the head, so without this restore a cycle in
+        # which every candidate failed its filters would leave a rejected design as the head and
+        # the next cycle would build on it.
         best = next((c for c in ranked if c.passed_filters), None)
-        if best is not None:
-            head = next((c for c in commits if c.label == best.label), None)
-            if head is not None:
-                branch.head_commit_id = head.id
-                db.flush()
+        head_commit = (
+            next((c for c in commits if c.label == best.label), None) if best else None
+        )
+        branch.head_commit_id = head_commit.id if head_commit else previous_head
+        db.flush()
+        if head_commit is None:
+            _observe(
+                db,
+                cycle,
+                "branch_head_unchanged",
+                "no candidate passed the hard filters; branch head left on the parent commit",
+                {"branch": branch.name, "head_commit": previous_head},
+            )
 
         # 6) wet-lab pack ------------------------------------------------------
         pack = wetlab.build_pack(
@@ -525,6 +594,8 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
             project.name,
             top_n=shortlist_size,
             total_candidate_pool=len(evaluations),
+            calibration=calibration.project_calibration(db, project.id),
+            cycle_id=cycle.id,
         )
         narrative = analysis.narrate_cycle(
             {
@@ -557,6 +628,15 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                 "economics": pack.get("economics"),
                 "narrative": narrative,
             },
+        )
+        # The daemon is told what happened rather than run here: a cycle that commits thirteen
+        # designs must produce one coalesced research event, on the daemon's own worker.
+        research.enqueue(
+            db,
+            project.id,
+            "cycle",
+            ref=cycle.id,
+            detail=f"round {cycle.round}: {len(commits)} commit(s), {len(passing)} passing",
         )
         db.commit()
         return cycle
