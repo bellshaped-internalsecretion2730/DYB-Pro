@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     agent_max_attempts: int = 2
     allow_local_simulation: bool = True
 
+    # Pharmakon
+    public_api_base: str = "http://localhost:8000"
+    pharma_daemon_frequency: str = "daily"
+
     # OpenAI
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"

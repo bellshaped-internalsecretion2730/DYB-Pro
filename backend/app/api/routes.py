@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.pharma_routes import router as pharma_router
 from app.api.schemas import (
     AgentRunOut,
     BranchCreate,
@@ -52,6 +53,7 @@ from app.worker import cancel_cycle_task, enqueue_cycle
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+router.include_router(pharma_router)
 
 viewer = Depends(require_role("viewer"))
 scientist = Depends(require_role("scientist"))

@@ -6,7 +6,10 @@ machine-readable results that DYB Pro can validate, score and commit.
 
 from __future__ import annotations
 
+from app.devin.pharma_schemas import PHARMA_ROLE_SCHEMAS, PHARMA_ROLES
+
 ROLES = ("sequence", "structure", "docking", "literature", "ranking")
+ALL_ROLES = (*ROLES, *PHARMA_ROLES)
 
 CANDIDATE_SCHEMA = {
     "type": "object",
@@ -154,6 +157,8 @@ ROLE_SCHEMAS = {
     "docking": CANDIDATE_LIST_SCHEMA,
     "literature": LITERATURE_SCHEMA,
     "ranking": RANKING_SCHEMA,
+    "orchestrator": PLAN_SCHEMA,
+    **PHARMA_ROLE_SCHEMAS,
 }
 
 

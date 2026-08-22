@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import AgentSwarm from "@/components/AgentSwarm";
 import AskPane from "@/components/AskPane";
 import CommandPalette, { type Command } from "@/components/CommandPalette";
@@ -258,6 +259,7 @@ export default function Workspace() {
         <ProviderBadge provider={provider} />
         {provider?.openai_configured && <span className="badge">OpenAI analysis on</span>}
         <div className="grow" />
+        <Link href="/pharmakon">Pharmakon drug programs →</Link>
         <button className="ghost" type="button" onClick={() => setPaletteOpen(true)}>
           <span className="kbd">⌘K</span> command palette
         </button>

@@ -182,6 +182,182 @@ export type Shortlist = {
   commits: { label: string; commit: string }[];
 };
 
+// ----------------------------------------------------------------- Pharmakon
+
+export type DrugProgram = {
+  id: string;
+  project_id: string;
+  name: string;
+  target_name: string;
+  indication: string;
+  objective: string;
+  current_stage: string;
+  stage_order: number;
+  stage_name: string;
+  autonomy_level: number;
+  autonomy_label: string;
+  status: string;
+  provider: string;
+  rounds_run: number;
+  stage_cycles: number;
+  acus_used: number;
+  assays_ingested: number;
+  molecule_count: number;
+  daemon_enabled: boolean;
+  knowledge_note_id?: string | null;
+  candidate_molecule_id?: string | null;
+  created_at: string;
+  last_research_at?: string | null;
+};
+
+export type GateCriterion = {
+  key: string;
+  label: string;
+  requirement: string;
+  observed: number | null;
+  passed: boolean;
+  blocking: boolean;
+  weight: number;
+  missing_evidence: boolean;
+};
+
+export type GateDecision = {
+  id: string;
+  stage: string;
+  decision: "go" | "no_go" | "recycle" | "kill";
+  score: number;
+  criteria: GateCriterion[];
+  blocking_failures: GateCriterion[];
+  rationale: string;
+  recommended_actions: string[];
+  next_stage?: string | null;
+  autonomy_level: number;
+  requires_approval: boolean;
+  approval_reason: string;
+  approval_status: string;
+  approval_note: string;
+  applied: boolean;
+  created_at: string;
+};
+
+export type MoleculeEvaluation = {
+  descriptors?: { molecular_weight?: number; clogp?: number; tpsa?: number; qed_like?: number };
+  binding?: { pkd?: number; kd_nm?: number; basis?: string };
+  admet?: { admet_score?: number };
+  synthesis?: { sa_score?: number; cost_per_gram_usd?: number };
+  liabilities?: { blocking?: string[]; alerts?: { name: string }[] };
+};
+
+export type ProgramMolecule = {
+  id: string;
+  short_id: string;
+  label: string;
+  smiles: string;
+  formula: string;
+  scaffold_key: string;
+  stage: string;
+  composite_score: number;
+  verdict: string;
+  rationale: string;
+  agent_role: string;
+  provider: string;
+  devin_session_url?: string | null;
+  evaluation: MoleculeEvaluation;
+};
+
+export type ProgramExperiment = {
+  id: string;
+  stage: string;
+  assay: string;
+  endpoint: string;
+  unit: string;
+  gate_metric: string;
+  molecules: string[];
+  predicted_value: number | null;
+  falsification: string;
+  cost_usd: number;
+  turnaround_days: number;
+  blocking: boolean;
+  priority: number;
+  status: string;
+};
+
+export type ResearchEvent = {
+  id: string;
+  role: string;
+  kind: string;
+  claim: string;
+  citation: string;
+  implication: string;
+  provider: string;
+  created_at: string;
+};
+
+export type ProgramEconomics = {
+  autonomous: { total_cost_usd: number; months_elapsed: number; acus_used: number };
+  human_baseline: { total_cost_usd: number; months: number; source: string };
+  delta: { cost_usd_saved: number; cost_ratio: number | null; months_saved: number };
+  forward_look: {
+    remaining_stages: string[];
+    probability_of_reaching_fih: number;
+    risk_adjusted_value_usd: number;
+    caveat: string;
+  };
+};
+
+export type DaemonStatus = {
+  devin_configured: boolean;
+  devin_schedules_supported: boolean;
+  mode: string;
+  note?: string;
+  error?: string;
+  schedules: { name?: string; enabled?: boolean; frequency?: string; last_executed_at?: string }[];
+};
+
+export type ProgramDetail = {
+  program: DrugProgram;
+  stage: { key: string; name: string; question: string; order: number };
+  ladder: { key: string; name: string; order: number }[];
+  latest_gate: GateDecision | null;
+  gate_history: { stage_key: string; decision: string; score: number; approval_status: string }[];
+  drift: PredictionDrift;
+  economics: ProgramEconomics;
+  daemon: DaemonStatus;
+  next_action: { action: string; reason: string; stage?: string | null };
+};
+
+export type RoundSummary = {
+  id: string;
+  stage: string;
+  number: number;
+  status: string;
+  provider: string;
+  summary: string;
+  error?: string | null;
+  acus_used: number;
+  metrics: Record<string, number>;
+  findings: Record<string, unknown>;
+  gate: Partial<GateDecision>;
+  experiment_plan: {
+    proposals: ProgramExperiment[];
+    evidence_tasks: { metric: string; label: string; requirement: string; settled_by: string }[];
+    total_cost_usd: number;
+    critical_path_days: number;
+  };
+  orchestrator_session_url?: string | null;
+  created_at: string;
+};
+
+export type PredictionDrift = {
+  n: number;
+  rmse: number | null;
+  bias: number | null;
+  pairs: { molecule_hash: string; predicted_pkd: number; observed_pkd: number }[];
+  worst: { molecule_hash: string; predicted: number; observed: number } | null;
+  interpretation: string;
+  method: string;
+};
+
 export type Observation = {
   id: string;
   role: string;
