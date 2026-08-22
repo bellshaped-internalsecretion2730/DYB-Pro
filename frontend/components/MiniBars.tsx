@@ -28,7 +28,7 @@ export default function MiniBars({ bars, max }: { bars: MiniBar[]; max?: number 
       {bars.map((b) => (
         <div className="barrow" key={b.key}>
           <span className="name tip" data-tip={b.tip} tabIndex={0}>
-            {b.name}
+            <span className="clip">{b.name}</span>
           </span>
           <span className="bartrack">
             <span
