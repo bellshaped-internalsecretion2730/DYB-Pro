@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from app.api.pharma_routes import router as pharma_router
 from app.api.schemas import (
     AgentRunOut,
+    AutonomyDecisionOut,
+    AutonomyLedgerOut,
     BranchCreate,
     CommitOut,
     CycleCreate,
@@ -22,6 +24,10 @@ from app.api.schemas import (
     MeasuredResultOut,
     MergeRequest,
     ObservationOut,
+    OverrideIn,
+    OverrideOut,
+    ProblemSpecCreate,
+    ProblemSpecOut,
     ProjectCreate,
     ProjectOut,
     ProviderStatus,
@@ -32,14 +38,17 @@ from app.devin.runner import provider_status
 from app.models import (
     AgentRun,
     Artifact,
+    AutonomyDecision,
     Branch,
     DesignCycle,
     MeasuredResult,
     Observation,
+    ProblemSpec,
     Project,
     ProteinCommit,
     ResearchEvent,
     User,
+    utcnow,
 )
 from app.security import (
     can_access_project,
@@ -51,11 +60,13 @@ from app.security import (
     usage_snapshot,
 )
 from app.services import (
+    autonomy,
     calibration,
     databases,
     economics,
     ingest,
     learning,
+    problem,
     research,
     wetlab,
 )
@@ -535,6 +546,184 @@ def project_drift(project_id: str, db: Session = Depends(get_db), user: User = v
     return calibration.project_calibration(db, project_id)
 
 
+def _problem_spec_out(db: Session, spec: ProblemSpec) -> ProblemSpecOut:
+    return ProblemSpecOut(
+        id=spec.id,
+        project_id=spec.project_id,
+        version=spec.version,
+        status=spec.status,
+        objectives=problem.objectives_with_calibration(db, spec),
+        hard_constraints=spec.hard_constraints or [],
+        deciding_objective=spec.deciding_objective,
+        target_readout=spec.target_readout,
+        notes=spec.notes,
+        created_by=spec.created_by,
+        created_at=spec.created_at,
+        superseded_at=spec.superseded_at,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/problem-spec",
+    response_model=ProblemSpecOut,
+    tags=["problem-spec"],
+)
+def create_problem_spec(
+    project_id: str,
+    payload: ProblemSpecCreate,
+    db: Session = Depends(get_db),
+    user: User = scientist,
+) -> ProblemSpecOut:
+    require_project(db, user, project_id, write=True)
+    try:
+        validated = problem.validate_spec(payload.model_dump())
+    except problem.SpecError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    active = db.scalar(
+        select(ProblemSpec).where(
+            ProblemSpec.project_id == project_id,
+            ProblemSpec.status == "active",
+        )
+    )
+    if active is not None:
+        active.status = "superseded"
+        active.superseded_at = utcnow()
+    version = (
+        db.scalar(
+            select(func.max(ProblemSpec.version)).where(ProblemSpec.project_id == project_id)
+        )
+        or 0
+    ) + 1
+    spec = ProblemSpec(
+        project_id=project_id,
+        version=int(version),
+        status="active",
+        objectives=validated["objectives"],
+        hard_constraints=validated["hard_constraints"],
+        deciding_objective=validated["deciding_objective"],
+        target_readout=validated["target_readout"],
+        notes=validated["notes"],
+        created_by=user.id,
+    )
+    db.add(spec)
+    db.commit()
+    db.refresh(spec)
+    return _problem_spec_out(db, spec)
+
+
+@router.get(
+    "/projects/{project_id}/problem-spec",
+    response_model=ProblemSpecOut,
+    tags=["problem-spec"],
+)
+def get_problem_spec(
+    project_id: str, db: Session = Depends(get_db), user: User = viewer
+) -> ProblemSpecOut:
+    require_project(db, user, project_id)
+    spec = db.scalar(
+        select(ProblemSpec).where(
+            ProblemSpec.project_id == project_id,
+            ProblemSpec.status == "active",
+        )
+    )
+    if spec is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "project has no active problem spec")
+    return _problem_spec_out(db, spec)
+
+
+@router.get(
+    "/projects/{project_id}/problem-spec/history",
+    response_model=list[ProblemSpecOut],
+    tags=["problem-spec"],
+)
+def problem_spec_history(
+    project_id: str, db: Session = Depends(get_db), user: User = viewer
+) -> list[ProblemSpecOut]:
+    require_project(db, user, project_id)
+    specs = db.scalars(
+        select(ProblemSpec)
+        .where(ProblemSpec.project_id == project_id)
+        .order_by(ProblemSpec.version.desc())
+        .limit(50)
+    )
+    return [_problem_spec_out(db, spec) for spec in specs]
+
+
+def _autonomy_decision_out(decision: AutonomyDecision) -> AutonomyDecisionOut:
+    return AutonomyDecisionOut(
+        id=decision.id,
+        project_id=decision.project_id,
+        cycle_id=decision.cycle_id,
+        commit_id=decision.commit_id,
+        step=decision.step,
+        decision=decision.decision,
+        actor=decision.actor,
+        autonomy=decision.autonomy,
+        basis=decision.basis or {},
+        reversible=decision.reversible,
+        confidence_basis=decision.confidence_basis,
+        overridden_by=decision.overridden_by,
+        override_reason=decision.override_reason,
+        overridden_at=decision.overridden_at,
+        created_at=decision.created_at,
+    )
+
+
+@router.get(
+    "/projects/{project_id}/autonomy-ledger",
+    response_model=AutonomyLedgerOut,
+    tags=["autonomy"],
+)
+def autonomy_ledger(
+    project_id: str,
+    cycle_id: str | None = None,
+    limit: int = Query(default=200, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: User = viewer,
+) -> AutonomyLedgerOut:
+    require_project(db, user, project_id)
+    decisions = autonomy.ledger(db, project_id, cycle_id=cycle_id, limit=limit)
+    return AutonomyLedgerOut(
+        summary=autonomy.summary(db, project_id),
+        decisions=[_autonomy_decision_out(decision) for decision in decisions],
+    )
+
+
+@router.post(
+    "/projects/{project_id}/autonomy-ledger/{decision_id}/override",
+    response_model=OverrideOut,
+    tags=["autonomy"],
+)
+def override_autonomy_decision(
+    project_id: str,
+    decision_id: str,
+    payload: OverrideIn,
+    db: Session = Depends(get_db),
+    user: User = scientist,
+) -> OverrideOut:
+    """recorded, not reverted: this annotates the decision and does not change any commit,
+    branch head or pack."""
+    require_project(db, user, project_id, write=True)
+    decision = db.get(AutonomyDecision, decision_id)
+    if decision is None or decision.project_id != project_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "autonomy decision not found")
+    if not payload.reason.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "override reason must be non-empty")
+    try:
+        decision = autonomy.override(db, decision_id, user.id, payload.reason)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    db.commit()
+    db.refresh(decision)
+    return OverrideOut(
+        **_autonomy_decision_out(decision).model_dump(),
+        effect=(
+            "recorded, not reverted: this annotates the decision and does not change any commit, "
+            "branch head or pack"
+        ),
+    )
+
+
 @router.get(
     "/projects/{project_id}/filter-performance",
     response_model=FilterPerformanceOut,
@@ -543,12 +732,14 @@ def project_drift(project_id: str, db: Session = Depends(get_db), user: User = v
 def filter_performance(
     project_id: str, db: Session = Depends(get_db), user: User = viewer
 ) -> FilterPerformanceOut:
-    """Filter confusion matrix from paired measured hit/miss outcomes.
-
-    Unknown outcomes cannot be classified because Project has no numeric success criterion;
-    they are excluded rather than assigned a label.
-    """
+    """Filter confusion matrix from one collapsed observation per design."""
     require_project(db, user, project_id)
+    spec = db.scalar(
+        select(ProblemSpec).where(
+            ProblemSpec.project_id == project_id,
+            ProblemSpec.status == "active",
+        )
+    )
     rows = db.execute(
         select(ProteinCommit, MeasuredResult)
         .join(MeasuredResult, MeasuredResult.commit_id == ProteinCommit.id)
@@ -557,9 +748,7 @@ def filter_performance(
             MeasuredResult.project_id == project_id,
         )
     ).all()
-    return FilterPerformanceOut(
-        **economics.filter_performance(rows)
-    )
+    return FilterPerformanceOut(**economics.filter_performance(rows, spec=spec))
 
 
 # ------------------------------------------------------------- research daemon

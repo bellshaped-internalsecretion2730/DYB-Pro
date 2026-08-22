@@ -58,6 +58,30 @@ class Project(Base):
     branches: Mapped[list[Branch]] = relationship(back_populates="project")
 
 
+class ProblemSpec(Base):
+    """Append-only, versioned machine-checkable objectives for a project."""
+
+    __tablename__ = "problem_specs"
+    __table_args__ = (
+        UniqueConstraint("project_id", "version", name="uq_spec_project_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    objectives: Mapped[list] = mapped_column(JSON, default=list)
+    hard_constraints: Mapped[list] = mapped_column(JSON, default=list)
+    deciding_objective: Mapped[str] = mapped_column(String(64))
+    target_readout: Mapped[str] = mapped_column(String(64))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    superseded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class Artifact(Base):
     __tablename__ = "artifacts"
 
@@ -215,6 +239,32 @@ class MeasuredResult(Base):
     origin: Mapped[str] = mapped_column(String(32), default="measured")  # measured|simulated
     notes: Mapped[str] = mapped_column(Text, default="")
     reported_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AutonomyDecision(Base):
+    """Append-only record of a machine decision and the basis that produced it."""
+
+    __tablename__ = "autonomy_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    cycle_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    step: Mapped[str] = mapped_column(String(32))
+    decision: Mapped[str] = mapped_column(String(255))
+    actor: Mapped[str] = mapped_column(String(64))
+    autonomy: Mapped[str] = mapped_column(String(16))
+    basis: Mapped[dict] = mapped_column(JSON, default=dict)
+    reversible: Mapped[bool] = mapped_column(Boolean)
+    confidence_basis: Mapped[str] = mapped_column(Text)
+    overridden_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    overridden_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
