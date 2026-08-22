@@ -313,7 +313,14 @@ export default function Workspace() {
         </aside>
 
         <main className="center">
-          <div style={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", minHeight: 0 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateRows: "auto minmax(0, 1fr)",
+              minHeight: 0,
+              minWidth: 0,
+            }}
+          >
             <div className="pane-header" role="tablist" aria-label="center surface">
               <div className="row">
                 {(

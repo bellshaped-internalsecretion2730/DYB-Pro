@@ -346,6 +346,7 @@ button.tab[aria-selected="true"] {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-height: 0;
+  min-width: 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -420,10 +421,12 @@ button.tab[aria-selected="true"] {
 .fold-strip {
   border-top: 1px solid var(--line);
   background: var(--raised);
+  min-width: 0;
 }
 
 .thumbs {
   display: flex;
+  min-width: 0;
   gap: 8px;
   padding: 8px 12px 12px;
   overflow-x: auto;
@@ -668,6 +671,7 @@ button.tab[aria-selected="true"] {
 
 .center-body {
   min-height: 0;
+  min-width: 0;
   overflow: auto;
   padding: 12px;
   display: grid;
