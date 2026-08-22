@@ -1,10 +1,12 @@
-"""Celery worker: long-running design cycles run here, never in the request path."""
+"""Celery worker: long-running design cycles and program rounds run here, never in the request path."""
 
 from __future__ import annotations
 
 import logging
 
 from celery import Celery
+from celery.schedules import crontab
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import session_scope
@@ -29,6 +31,16 @@ celery_app.conf.update(
     # The daemon gets its own queue so a half-hour design cycle can never delay research, and so
     # the two can be scaled (or restarted) independently.
     task_routes={"dyb-pro.research_*": {"queue": "research"}},
+    beat_schedule={
+        "research-daemon-tick": {
+            "task": "dyb-pro.research_tick",
+            "schedule": settings.research_tick_seconds,
+        },
+        "pharmakon-research-daemon": {
+            "task": "pharmakon.daemon_tick",
+            "schedule": crontab(hour="3", minute="0"),
+        },
+    },
 )
 
 
@@ -87,20 +99,68 @@ def research_event_task(event_id: str) -> dict:
         return {"id": event.id, "status": event.status, "error": event.error}
 
 
-celery_app.conf.beat_schedule = {
-    "research-daemon-tick": {
-        "task": "dyb-pro.research_tick",
-        "schedule": settings.research_tick_seconds,
-    }
-}
-
-
 def enqueue_research_event(event_id: str) -> str | None:
     """Queue one research event; the row stays `queued` for the next tick if the broker is down."""
     try:
         return research_event_task.delay(event_id).id
     except Exception as exc:
         logger.warning("celery unavailable (%s); research event %s stays queued", exc, event_id)
+        return None
+
+
+@celery_app.task(name="pharmakon.run_round", bind=True, max_retries=1)
+def run_round_task(self, round_id: str) -> dict:
+    from app.services.program import run_round
+
+    with session_scope() as db:
+        rnd = run_round(db, round_id)
+        return {
+            "round_id": rnd.id,
+            "status": rnd.status,
+            "provider": rnd.provider,
+            "gate": (rnd.gate or {}).get("decision"),
+            "acus_used": rnd.acus_used,
+            "error": rnd.error,
+        }
+
+
+@celery_app.task(name="pharmakon.daemon_tick")
+def daemon_tick_task() -> dict:
+    """Local research-daemon tick: advance every autonomous program that may move itself.
+
+    This is the fallback for organisations without Devin scheduled sessions. It runs rounds the
+    autonomy level permits, but unlike a real Devin schedule it cannot search literature, so it
+    never produces new external evidence.
+    """
+    from app.models import DrugProgram
+    from app.services.program import next_action, start_round
+
+    acted: list[dict] = []
+    with session_scope() as db:
+        programs = list(
+            db.scalars(select(DrugProgram).where(DrugProgram.status.in_(["active", "running"])))
+        )
+        for program in programs:
+            if not program.daemon_enabled:
+                continue
+            plan = next_action(db, program)
+            if plan["action"] not in {"run_round", "advance_stage"}:
+                acted.append({"program_id": program.id, "skipped": plan["reason"]})
+                continue
+            rnd = start_round(db, program)
+            db.commit()
+            enqueue_round(rnd.id)
+            acted.append({"program_id": program.id, "round_id": rnd.id, "action": plan["action"]})
+    return {"programs": len(acted), "actions": acted}
+
+
+def enqueue_round(round_id: str) -> str | None:
+    """Queue a program round, falling back to inline execution when no broker is reachable."""
+    try:
+        return run_round_task.delay(round_id).id
+    except Exception as exc:  # broker down: the demo must still work
+        logger.warning("celery unavailable (%s); running round inline", exc)
+        run_round_task.apply(args=[round_id])
         return None
 
 

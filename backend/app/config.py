@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     research_acu_limit: int = 3
     research_max_topics_per_event: int = 4
 
+    # Pharmakon
+    public_api_base: str = "http://localhost:8000"
+    pharma_daemon_frequency: str = "daily"
+
     # OpenAI
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"

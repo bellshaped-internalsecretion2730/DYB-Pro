@@ -310,6 +310,221 @@ class UsageRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class DrugProgram(Base):
+    """A small-molecule discovery program: one target, one indication, one stage ladder."""
+
+    __tablename__ = "drug_programs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    target_name: Mapped[str] = mapped_column(String(255), default="")
+    target_sequence: Mapped[str] = mapped_column(Text, default="")
+    pocket_residues: Mapped[list] = mapped_column(JSON, default=list)
+    indication: Mapped[str] = mapped_column(String(255), default="")
+    objective: Mapped[str] = mapped_column(Text, default="")
+    current_stage: Mapped[str] = mapped_column(String(64), default="target_assessment")
+    stage_cycles: Mapped[int] = mapped_column(Integer, default=0)
+    rounds_run: Mapped[int] = mapped_column(Integer, default=0)
+    autonomy_level: Mapped[int] = mapped_column(Integer, default=2)
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    # active|awaiting_approval|running|killed|completed
+    provider: Mapped[str] = mapped_column(String(32), default="devin")
+    acus_used: Mapped[float] = mapped_column(Float, default=0.0)
+    assays_ingested: Mapped[int] = mapped_column(Integer, default=0)
+    daemon_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    daemon_schedule_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    knowledge_note_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    candidate_molecule_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    backup_molecule_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_research_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class MoleculeCommit(Base):
+    """Immutable small-molecule commit.
+
+    `id` is the program-scoped content address (program id + molecule graph hash) and
+    `molecule_hash` is the program-independent graph hash, so the same chemistry can be found
+    across programs without two programs sharing one row of evidence.
+    """
+
+    __tablename__ = "molecule_commits"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    molecule_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
+    program_id: Mapped[str] = mapped_column(ForeignKey("drug_programs.id"), index=True)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    smiles: Mapped[str] = mapped_column(Text)
+    formula: Mapped[str] = mapped_column(String(128), default="")
+    scaffold_key: Mapped[str] = mapped_column(String(64), default="", index=True)
+    parent_ids: Mapped[list] = mapped_column(JSON, default=list)
+    transform: Mapped[str] = mapped_column(Text, default="")
+    stage: Mapped[str] = mapped_column(String(64), default="")
+    evaluation: Mapped[dict] = mapped_column(JSON, default=dict)
+    composite_score: Mapped[float] = mapped_column(Float, default=0.0)
+    verdict: Mapped[str] = mapped_column(String(64), default="")
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    agent_role: Mapped[str] = mapped_column(String(64), default="human")
+    provider: Mapped[str] = mapped_column(String(32), default="human")
+    devin_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    devin_session_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    citations: Mapped[list] = mapped_column(JSON, default=list)
+    round_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ProgramRound(Base):
+    """One orchestrated round of work inside a stage: plan, fan-out, evidence, gate."""
+
+    __tablename__ = "program_rounds"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("drug_programs.id"), index=True)
+    stage: Mapped[str] = mapped_column(String(64))
+    number: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(32), default="queued")
+    # queued|planning|fanning_out|awaiting_agents|scoring|gated|failed|cancelled
+    provider: Mapped[str] = mapped_column(String(32), default="devin")
+    plan: Mapped[dict] = mapped_column(JSON, default=dict)
+    orchestrator_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    orchestrator_session_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    findings: Mapped[dict] = mapped_column(JSON, default=dict)
+    gate: Mapped[dict] = mapped_column(JSON, default=dict)
+    experiment_plan: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    acus_used: Mapped[float] = mapped_column(Float, default=0.0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PharmaAgentRun(Base):
+    """A Pharmakon agent run. Same provenance contract as `AgentRun`, keyed to a program round."""
+
+    __tablename__ = "pharma_agent_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("drug_programs.id"), index=True)
+    round_id: Mapped[str] = mapped_column(ForeignKey("program_rounds.id"), index=True)
+    role: Mapped[str] = mapped_column(String(64))
+    task: Mapped[str] = mapped_column(Text, default="")
+    prompt: Mapped[str] = mapped_column(Text, default="")
+    provider: Mapped[str] = mapped_column(String(32), default="devin")
+    devin_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    devin_session_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    playbook_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    devin_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    acu_limit: Mapped[int] = mapped_column(Integer, default=5)
+    acus: Mapped[float] = mapped_column(Float, default=0.0)
+    structured_output: Mapped[dict] = mapped_column(JSON, default=dict)
+    log: Mapped[list] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class GateDecision(Base):
+    """Append-only record of every stage-gate evaluation and its approval trail."""
+
+    __tablename__ = "gate_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("drug_programs.id"), index=True)
+    round_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stage: Mapped[str] = mapped_column(String(64))
+    decision: Mapped[str] = mapped_column(String(16))  # go|no_go|recycle|kill
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    criteria: Mapped[list] = mapped_column(JSON, default=list)
+    blocking_failures: Mapped[list] = mapped_column(JSON, default=list)
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    recommended_actions: Mapped[list] = mapped_column(JSON, default=list)
+    next_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    autonomy_level: Mapped[int] = mapped_column(Integer, default=2)
+    requires_approval: Mapped[bool] = mapped_column(Boolean, default=False)
+    approval_reason: Mapped[str] = mapped_column(Text, default="")
+    approval_status: Mapped[str] = mapped_column(String(16), default="not_required")
+    # not_required|pending|approved|rejected
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approval_note: Mapped[str] = mapped_column(Text, default="")
+    applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider: Mapped[str] = mapped_column(String(32), default="deterministic")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Experiment(Base):
+    """A proposed wet-lab experiment: what would falsify the prediction, and what it costs."""
+
+    __tablename__ = "experiments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("drug_programs.id"), index=True)
+    round_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stage: Mapped[str] = mapped_column(String(64), default="")
+    assay: Mapped[str] = mapped_column(String(128))
+    endpoint: Mapped[str] = mapped_column(String(64), default="")
+    unit: Mapped[str] = mapped_column(String(32), default="")
+    gate_metric: Mapped[str] = mapped_column(String(64), default="")
+    molecules: Mapped[list] = mapped_column(JSON, default=list)
+    predicted_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    falsification: Mapped[str] = mapped_column(Text, default="")
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    turnaround_days: Mapped[int] = mapped_column(Integer, default=0)
+    blocking: Mapped[bool] = mapped_column(Boolean, default=False)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="proposed")
+    # proposed|approved|rejected|running|complete
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AssayResult(Base):
+    """Measured data ingested from a wet lab. Outranks every in-silico prediction."""
+
+    __tablename__ = "assay_results"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("drug_programs.id"), index=True)
+    experiment_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    molecule_hash: Mapped[str] = mapped_column(String(64), index=True)
+    assay: Mapped[str] = mapped_column(String(128), default="")
+    metric: Mapped[str] = mapped_column(String(64))
+    value: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(32), default="")
+    operator: Mapped[str] = mapped_column(String(8), default="=")  # =|<|>
+    source: Mapped[str] = mapped_column(String(255), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    ingested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ProgramResearchEvent(Base):
+    """Append-only research memory for a program: findings, citations, drift, daemon activity."""
+
+    __tablename__ = "program_research_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    program_id: Mapped[str] = mapped_column(ForeignKey("drug_programs.id"), index=True)
+    round_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    role: Mapped[str] = mapped_column(String(64), default="system")
+    kind: Mapped[str] = mapped_column(String(64))
+    claim: Mapped[str] = mapped_column(Text, default="")
+    citation: Mapped[str] = mapped_column(String(512), default="")
+    implication: Mapped[str] = mapped_column(Text, default="")
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    provider: Mapped[str] = mapped_column(String(32), default="deterministic")
+    devin_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class PlaybookRef(Base):
     """Devin playbook ids reconciled by role, so we reuse rather than recreate."""
 
