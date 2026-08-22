@@ -1,7 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AgentSwarm from "@/components/AgentSwarm";
+import AskPane from "@/components/AskPane";
+import CommandPalette, { type Command } from "@/components/CommandPalette";
+import FoldStrip from "@/components/FoldStrip";
+import ProteinViewer from "@/components/ProteinViewer";
 import ProviderBadge from "@/components/ProviderBadge";
 import ShortlistPanel from "@/components/ShortlistPanel";
 import VersionDag from "@/components/VersionDag";
@@ -12,6 +16,7 @@ import {
   type AgentRun,
   type Cycle,
   type Graph,
+  type GraphNode,
   type Observation,
   type Project,
   type Provider,
@@ -19,6 +24,7 @@ import {
 } from "@/lib/api";
 
 const TERMINAL = ["committed", "partial", "failed", "cancelled"];
+type CenterTab = "structure" | "lineage" | "shortlist" | "log";
 
 export default function Workspace() {
   const [provider, setProvider] = useState<Provider | null>(null);
@@ -26,6 +32,7 @@ export default function Workspace() {
   const [project, setProject] = useState<Project | null>(null);
   const [brief, setBrief] = useState("");
   const [cycle, setCycle] = useState<Cycle | null>(null);
+  const [cycles, setCycles] = useState<Cycle[]>([]);
   const [agents, setAgents] = useState<AgentRun[]>([]);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [timeline, setTimeline] = useState<Observation[]>([]);
@@ -33,6 +40,10 @@ export default function Workspace() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
+  const [tab, setTab] = useState<CenterTab>("structure");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [compareId, setCompareId] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
@@ -66,23 +77,6 @@ export default function Workspace() {
     setTimeline(t);
   }, []);
 
-  const selectProject = useCallback(
-    async (p: Project) => {
-      setProject(p);
-      setShortlist(null);
-      setAgents([]);
-      setBrief(p.goal);
-      try {
-        await refreshProject(p.id);
-        const cycles = await api.get<Cycle[]>(`/projects/${p.id}/cycles`);
-        if (cycles.length > 0) await attachCycle(cycles[0]);
-      } catch (e) {
-        fail(e);
-      }
-    },
-    [refreshProject],
-  );
-
   const attachCycle = useCallback(async (c: Cycle) => {
     setCycle(c);
     setAgents(await api.get<AgentRun[]>(`/cycles/${c.id}/agents`));
@@ -94,6 +88,26 @@ export default function Workspace() {
       }
     }
   }, []);
+
+  const selectProject = useCallback(
+    async (p: Project) => {
+      setProject(p);
+      setShortlist(null);
+      setAgents([]);
+      setBrief(p.goal);
+      setSelectedId(null);
+      setCompareId(null);
+      try {
+        await refreshProject(p.id);
+        const rows = await api.get<Cycle[]>(`/projects/${p.id}/cycles`);
+        setCycles(rows);
+        if (rows.length > 0) await attachCycle(rows[0]);
+      } catch (e) {
+        fail(e);
+      }
+    },
+    [refreshProject, attachCycle],
+  );
 
   // poll a running cycle
   useEffect(() => {
@@ -159,6 +173,7 @@ export default function Workspace() {
         brief: brief || project.goal,
         branch: "main",
       });
+      setCycles((rows) => [created, ...rows.filter((c) => c.id !== created.id)]);
       await attachCycle(created);
     } catch (e) {
       fail(e);
@@ -178,21 +193,77 @@ export default function Workspace() {
 
   const running = cycle !== null && !TERMINAL.includes(cycle.status);
 
+  const versions = useMemo<GraphNode[]>(() => {
+    const nodes = graph?.nodes ? [...graph.nodes] : [];
+    return nodes.sort((a, b) => {
+      const ah = a.is_head ? 1 : 0;
+      const bh = b.is_head ? 1 : 0;
+      if (ah !== bh) return bh - ah;
+      return (b.cycle_round ?? 0) - (a.cycle_round ?? 0);
+    });
+  }, [graph]);
+
+  const selected = useMemo(
+    () => versions.find((n) => n.id === selectedId) || versions.find((n) => n.is_head) || versions[0] || null,
+    [versions, selectedId],
+  );
+  const compared = useMemo(() => versions.find((n) => n.id === compareId) || null, [versions, compareId]);
+
+  const sequence = useMemo(() => {
+    if (!selected) return null;
+    const item = shortlist?.pack.shortlist.find((s) => s.label === selected.label);
+    return item?.sequence ?? null;
+  }, [selected, shortlist]);
+
+  // Cmd/Ctrl+K command palette
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+      if (e.key === "Escape") setPaletteOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const commands: Command[] = [
+    { id: "run", label: "run design cycle", hint: "⌘↵", disabled: !project || running, run: runCycle },
+    { id: "cancel", label: "cancel running cycle", disabled: !running, run: cancelCycle },
+    { id: "seed", label: "load demo project", run: seedDemo },
+    { id: "upload", label: "upload sequence / structure", disabled: !project, run: () => fileRef.current?.click() },
+    { id: "tab-structure", label: "view protein viewer", run: () => setTab("structure") },
+    { id: "tab-lineage", label: "view version DAG", run: () => setTab("lineage") },
+    { id: "tab-shortlist", label: "view wet-lab shortlist", run: () => setTab("shortlist") },
+    { id: "tab-log", label: "view observation log", run: () => setTab("log") },
+    { id: "clear-compare", label: "exit version compare", disabled: !compareId, run: () => setCompareId(null) },
+    {
+      id: "refresh",
+      label: "refresh project",
+      disabled: !project,
+      run: () => {
+        if (project) refreshProject(project.id).catch(fail);
+      },
+    },
+  ];
+
   return (
     <>
       <header className="top">
-        <div>
-          <div className="brand">
-            FOLD<span>SMITH</span>
-          </div>
-          <div className="tagline">pre-wetlab protein design OS</div>
+        <div className="brand">
+          FOLD<span>SMITH</span>
         </div>
+        <span className="tagline">pre-wetlab design OS</span>
         <ProviderBadge provider={provider} />
         {provider?.openai_configured && <span className="badge">OpenAI analysis on</span>}
         <div className="grow" />
+        <button className="ghost" type="button" onClick={() => setPaletteOpen(true)}>
+          <span className="kbd">⌘K</span> command palette
+        </button>
         <input
           type="text"
-          style={{ width: 220 }}
+          style={{ width: 190 }}
           value={keyInput}
           onChange={(e) => setKeyInput(e.target.value)}
           aria-label="API key"
@@ -209,113 +280,135 @@ export default function Workspace() {
         </button>
       </header>
 
-      <main>
-        {error && (
-          <div className="panel wide">
-            <p className="err" style={{ margin: 0 }}>
-              {error}
-            </p>
-          </div>
-        )}
-
-        <section className="panel">
-          <h2>1 · Research brief</h2>
-          <p className="hint">
-            Say what you want in plain language, drop FASTA/PDB/CIF/CSV, then run a cycle. Three
-            clicks: load demo → run cycle → export shortlist.
+      {error && (
+        <div className="error-bar">
+          <p className="err" style={{ margin: 0 }}>
+            {error}
           </p>
-          <div className="row" style={{ marginBottom: 8 }}>
-            <select
-              value={project?.id || ""}
-              onChange={(e) => {
-                const p = projects.find((x) => x.id === e.target.value);
-                if (p) selectProject(p);
-              }}
-              style={{ maxWidth: 320 }}
-            >
-              <option value="">— select project —</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} {p.is_demo ? "(demo)" : ""}
-                </option>
-              ))}
-            </select>
-            <button className="secondary" type="button" onClick={seedDemo} disabled={busy === "seed"}>
-              load demo project
-            </button>
-          </div>
-          <textarea
-            value={brief}
-            onChange={(e) => setBrief(e.target.value)}
-            placeholder="e.g. Improve GB1 thermal stability and solubility without losing predicted Fc binding."
+        </div>
+      )}
+
+      <div className="workspace">
+        <aside className="pane left" aria-label="ask and agent control">
+          <AskPane
+            projects={projects}
+            project={project}
+            cycles={cycles}
+            cycle={cycle}
+            agents={agents}
+            brief={brief}
+            busy={busy}
+            running={running}
+            fileRef={fileRef}
+            onSelectProject={selectProject}
+            onBriefChange={setBrief}
+            onRun={runCycle}
+            onCancel={cancelCycle}
+            onSeedDemo={seedDemo}
+            onUpload={upload}
+            onAttachCycle={(c) => {
+              attachCycle(c).catch(fail);
+            }}
           />
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              accept=".fasta,.fa,.faa,.pdb,.ent,.cif,.mmcif,.csv,.tsv"
-              onChange={(e) => upload(e.target.files)}
-              disabled={!project || busy === "upload"}
-            />
-          </div>
-          <div className="row" style={{ marginTop: 10 }}>
-            <button type="button" onClick={runCycle} disabled={!project || busy === "cycle" || running}>
-              {running ? "cycle running…" : "run design cycle"}
-            </button>
-            {running && (
-              <button className="secondary" type="button" onClick={cancelCycle}>
-                cancel
-              </button>
-            )}
-            {project && (
-              <span className="muted">
-                {project.commit_count} commits · {project.cycle_count} cycles · branches{" "}
-                {project.branches.join(", ")}
-              </span>
-            )}
-          </div>
-        </section>
+        </aside>
 
-        <section className="panel">
-          <h2>2 · Agent swarm</h2>
-          <p className="hint">
-            One Devin orchestrator plans the round and fans out to sequence, structure, docking,
-            literature and ranking children.
-          </p>
-          <AgentSwarm cycle={cycle} agents={agents} />
-        </section>
-
-        <section className="panel">
-          <h2>3 · Protein version DAG</h2>
-          <p className="hint">
-            Every design is an immutable commit: sequence, structure, scores, parent, agent, prompt
-            and citations.
-          </p>
-          <VersionDag graph={graph} />
-        </section>
-
-        <section className="panel">
-          <h2>Observation log</h2>
-          <p className="hint">Append-only memory the next cycle reads before proposing designs.</p>
-          <div className="timeline">
-            {timeline.map((o) => (
-              <div className="event" key={o.id}>
-                <div className="kind">
-                  {o.kind} · {o.role}
-                </div>
-                <div>{o.summary}</div>
+        <main className="center">
+          <div style={{ display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", minHeight: 0 }}>
+            <div className="pane-header" role="tablist" aria-label="center surface">
+              <div className="row">
+                {(
+                  [
+                    ["structure", "protein viewer"],
+                    ["lineage", "version DAG"],
+                    ["shortlist", "wet-lab shortlist"],
+                    ["log", "observation log"],
+                  ] as [CenterTab, string][]
+                ).map(([id, label]) => (
+                  <button
+                    className="tab"
+                    type="button"
+                    role="tab"
+                    key={id}
+                    aria-selected={tab === id}
+                    onClick={() => setTab(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            ))}
-            {timeline.length === 0 && <p className="muted">no observations yet</p>}
-          </div>
-        </section>
+              <span className="meta">{project ? project.name : "no project"}</span>
+            </div>
 
-        <section className="panel wide">
-          <h2>4 · Wet-lab shortlist</h2>
-          <ShortlistPanel shortlist={shortlist} cycleId={cycle?.id ?? null} />
-        </section>
-      </main>
+            {tab === "structure" && (
+              <ProteinViewer
+                node={selected}
+                compareNode={compared}
+                sequence={sequence}
+                onClearCompare={() => setCompareId(null)}
+              />
+            )}
+
+            {tab === "lineage" && (
+              <div className="center-body">
+                <section className="panel">
+                  <h2>Protein version DAG</h2>
+                  <p className="hint">
+                    Every design is an immutable commit: sequence, structure, scores, parent, agent, prompt
+                    and citations.
+                  </p>
+                  <VersionDag graph={graph} />
+                </section>
+              </div>
+            )}
+
+            {tab === "shortlist" && (
+              <div className="center-body">
+                <section className="panel">
+                  <h2>Wet-lab shortlist</h2>
+                  <ShortlistPanel shortlist={shortlist} cycleId={cycle?.id ?? null} />
+                </section>
+              </div>
+            )}
+
+            {tab === "log" && (
+              <div className="center-body">
+                <section className="panel">
+                  <h2>Observation log</h2>
+                  <p className="hint">Append-only memory the next cycle reads before proposing designs.</p>
+                  <div className="timeline">
+                    {timeline.map((o) => (
+                      <div className="event" key={o.id}>
+                        <div className="kind">
+                          {o.kind} · {o.role}
+                        </div>
+                        <div>{o.summary}</div>
+                      </div>
+                    ))}
+                    {timeline.length === 0 && <p className="muted">no observations yet</p>}
+                  </div>
+                </section>
+              </div>
+            )}
+          </div>
+
+          <FoldStrip
+            nodes={versions}
+            selectedId={selected?.id ?? null}
+            compareId={compareId}
+            onSelect={(n) => {
+              setSelectedId(n.id);
+              setTab("structure");
+            }}
+            onCompare={(n) => setCompareId(n.id)}
+          />
+        </main>
+
+        <aside className="pane right" aria-label="pixel agent swarm">
+          <AgentSwarm cycle={cycle} agents={agents} />
+        </aside>
+      </div>
+
+      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
     </>
   );
 }
