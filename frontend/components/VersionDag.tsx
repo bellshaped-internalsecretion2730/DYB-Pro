@@ -66,7 +66,7 @@ export default function VersionDag({ graph }: { graph: Graph | null }) {
                 key={i}
                 d={`M ${a.x} ${a.y} C ${mid} ${a.y}, ${mid} ${b.y}, ${b.x} ${b.y}`}
                 fill="none"
-                stroke="#2c3a4d"
+                stroke="var(--line-strong)"
                 strokeWidth={1.6}
               />
             );
@@ -82,14 +82,14 @@ export default function VersionDag({ graph }: { graph: Graph | null }) {
                 cx={n.x}
                 cy={n.y}
                 r={n.is_head ? R + 3 : R}
-                fill={n.passed_filters ? "#58d3a3" : "#ffb457"}
-                stroke={selected?.id === n.id ? "#e6edf6" : "#0b0f14"}
+                fill={n.passed_filters ? "var(--ok)" : "var(--warn)"}
+                stroke={selected?.id === n.id ? "var(--text)" : "var(--raised)"}
                 strokeWidth={2}
               />
-              <text x={n.x + 16} y={n.y - 2} fill="#e6edf6" fontSize={11.5}>
+              <text x={n.x + 16} y={n.y - 2} fill="var(--text)" fontSize={11.5}>
                 {n.label || n.short_id}
               </text>
-              <text x={n.x + 16} y={n.y + 12} fill="#8ea0b8" fontSize={10.5}>
+              <text x={n.x + 16} y={n.y + 12} fill="var(--muted)" fontSize={10.5}>
                 {n.branch}
                 {n.cycle_round ? ` · r${n.cycle_round}` : ""}
                 {n.scores?.composite_score !== undefined

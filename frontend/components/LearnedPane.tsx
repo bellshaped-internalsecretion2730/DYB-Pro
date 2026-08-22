@@ -1,6 +1,7 @@
 "use client";
 
 import type { Learned, Proposal } from "@/lib/api";
+import MiniBars, { type MiniBar } from "@/components/MiniBars";
 import { fmt } from "@/lib/research";
 
 export default function LearnedPane({
@@ -14,51 +15,43 @@ export default function LearnedPane({
   busy: string | null;
   onProposal: () => void;
 }) {
+  const driftBars: MiniBar[] = (learned?.drift ?? []).map((d) => ({
+    key: d.metric,
+    name: d.metric,
+    value: d.latest_abs_residual ?? 0,
+    mark: d.first_abs_residual ?? undefined,
+    tone: d.shrinking ? "ok" : "warn",
+    readout: `rmse ${fmt(d.rmse)} · ${d.shrinking ? "shrinking" : "not yet"}`,
+    tip: `${d.n} measurements · bias ${fmt(d.bias)} · rmse ${fmt(d.rmse)} · |residual| ${fmt(
+      d.first_abs_residual,
+    )} at the first version, ${fmt(d.latest_abs_residual)} now (marker = where it started)`,
+  }));
+
   return (
     <div>
-      <p className="hint">
-        The merged knowledge base: what changed v1→latest, whether in-silico↔wet-lab drift is
-        shrinking, and the next version the daemon would build.
-      </p>
       {learned ? (
         <>
           <p>
-            <b>{learned.headline}</b>
+            <b
+              className="tip"
+              data-tip="The merged knowledge base: what changed v1 to latest, whether in-silico vs wet-lab drift is shrinking, and the next version the daemon would build."
+              tabIndex={0}
+            >
+              {learned.headline}
+            </b>
           </p>
-          <ul className="steps">
-            {learned.lessons.slice(0, 8).map((l) => (
-              <li key={l}>{l}</li>
-            ))}
-            {learned.lessons.length === 0 && <li>no cross-version lessons yet</li>}
-          </ul>
-          {learned.drift.length > 0 && (
-            <table style={{ marginTop: 10 }}>
-              <thead>
-                <tr>
-                  <th>metric</th>
-                  <th>n</th>
-                  <th>bias</th>
-                  <th>rmse</th>
-                  <th>|resid| first → latest</th>
-                </tr>
-              </thead>
-              <tbody>
-                {learned.drift.map((d) => (
-                  <tr key={d.metric}>
-                    <td>{d.metric}</td>
-                    <td>{d.n}</td>
-                    <td>{fmt(d.bias)}</td>
-                    <td>{fmt(d.rmse)}</td>
-                    <td>
-                      {fmt(d.first_abs_residual)} → {fmt(d.latest_abs_residual)}{" "}
-                      <span className={`pill ${d.shrinking ? "ok" : "no"}`}>
-                        {d.shrinking ? "shrinking" : "not yet"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {driftBars.length > 0 ? (
+            <>
+              <h3 className="subhead">in-silico vs wet-lab drift</h3>
+              <MiniBars bars={driftBars} />
+            </>
+          ) : (
+            <ul className="steps">
+              {learned.lessons.slice(0, 6).map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+              {learned.lessons.length === 0 && <li>no cross-version lessons yet</li>}
+            </ul>
           )}
         </>
       ) : (
@@ -86,14 +79,14 @@ export default function LearnedPane({
       {proposal?.proposed && (
         <div style={{ marginTop: 10 }}>
           <h3 className="subhead">
-            {proposal.proposed.label} · target {proposal.target_metric}
+            <span className="tip" data-tip={proposal.why_this_metric || ""} tabIndex={0}>
+              {proposal.proposed.label} · target {proposal.target_metric}
+            </span>
           </h3>
-          <p className="muted">{proposal.why_this_metric}</p>
-          <p>
+          <p className="tip" data-tip={proposal.proposed.rationale} tabIndex={0}>
             mutations:{" "}
             <span className="mono">{proposal.proposed.mutations.join(" + ") || "none"}</span>
           </p>
-          <p className="muted">{proposal.proposed.rationale}</p>
           <table>
             <thead>
               <tr>

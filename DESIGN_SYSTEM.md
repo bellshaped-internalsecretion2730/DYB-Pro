@@ -1,8 +1,11 @@
 # DYB Pro design system
 
-Dark-first, true-black, hairline-bordered workspace for protein designers. The system is calm and
-dense: information carries the visual weight, decoration is minimal, and colour is reserved for
-state. Source of truth for the canvas is the Figma file
+Light, hairline-bordered workspace for protein designers: neo-brutalist geometry (strict grids,
+sharp 1px containers, crisp type) with high-end restraint. The system is calm and dense —
+information carries the visual weight, decoration is minimal, and saturated colour (blurple,
+electric indigo, cyan) is reserved for state. Numbers are drawn as charts rather than written out,
+and the sentence that explains a number lives in its hover/focus tooltip (`.tip`), never beside it.
+Source of truth for the canvas is the Figma file
 [`4HWllBrJeNykXShmXUuqqh`](https://www.figma.com/design/4HWllBrJeNykXShmXUuqqh); the tokens below are
 mirrored 1:1 as Figma variables and as CSS custom properties in `frontend/app/globals.css`.
 
@@ -10,20 +13,21 @@ mirrored 1:1 as Figma variables and as CSS custom properties in `frontend/app/gl
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `--bg` | `#000000` | app base, viewer stage |
-| `--raised` | `#08090a` | panes, top bar, strips |
-| `--panel` | `#0c0d0f` | cards, thumbnails |
-| `--panel-2` / `--input` | `#121316` | inputs, secondary buttons, hover |
-| `--line` | `#1b1d20` | 1px hairline borders (the only separator) |
-| `--line-strong` | `#2a2d31` | hover/active hairline, scrollbars |
-| `--text` | `#ecedee` | primary type |
-| `--muted` | `#9ba1a6` | secondary type |
-| `--faint` | `#6b7075` | labels, metadata, mono captions |
-| `--accent` | `#5e6ad2` | primary action, selected version, mutation markers |
-| `--accent-2` | `#5b8cff` | links, compare overlay |
-| `--ok` | `#35c08e` | passed filters, done |
-| `--warn` | `#e8a33d` | filtered/simulated, cancelled |
-| `--bad` | `#f0525b` | errors, failed runs |
+| `--bg` | `#eef0f4` | app base, viewer stage, inset wells |
+| `--raised` | `#ffffff` | panes, top bar, strips |
+| `--panel` | `#ffffff` | cards, thumbnails |
+| `--panel-2` / `--input` | `#f4f6f9` | inputs, secondary buttons, hover, bar tracks |
+| `--line` | `#dfe3e9` | 1px hairline borders (the only separator) |
+| `--line-strong` | `#c3c9d2` | hover/active hairline, scrollbars, chart markers |
+| `--text` | `#0f1216` | primary type (deep slate) |
+| `--muted` | `#545c66` | secondary type |
+| `--faint` | `#7d858f` | labels, metadata, mono captions |
+| `--accent` | `#4f46e5` | blurple: primary action, selected version, mutation markers |
+| `--accent-2` | `#2563eb` | electric indigo: links, compare overlay |
+| `--accent-3` | `#0891b2` | cyan: tertiary chart series |
+| `--ok` | `#0f9d6f` | passed filters, done, shrinking residuals |
+| `--warn` | `#b7791f` | filtered/simulated, cancelled |
+| `--bad` | `#d92d3c` | errors, failed runs |
 
 Type: `Inter` (UI) and `Geist Mono`/`JetBrains Mono` (`--font-mono`) for identifiers, scores, ACU
 counters and timestamps. Sizes run 9.5–13px; uppercase 10px `.label` for zone headers. Radii are
@@ -58,20 +62,20 @@ backend state behind it.
 
 | Backend status | Displayed state | Colour | Motion |
 | --- | --- | --- | --- |
-| `pending` / `queued` | queued | `--idle` `#4a4f55` | none |
-| `running` | thinking | `--thinking` `#a78bfa` | pulse |
-| `searching` | searching | `--searching` `#5b8cff` | pulse |
-| `writing` | writing | `--writing` `#35c08e` | pulse |
-| `finished` / `succeeded` | done | `--ok` `#35c08e` | none |
-| `failed` / `timeout` | failed / timeout | `--bad` `#f0525b` | none |
-| `cancelled` | cancelled | `--warn` `#e8a33d` | none |
+| `pending` / `queued` | queued | `--idle` `#98a0aa` | none |
+| `running` | thinking | `--thinking` `#7c3aed` | pulse |
+| `searching` | searching | `--searching` `#2563eb` | pulse |
+| `writing` | writing | `--writing` `#059669` | pulse |
+| `finished` / `succeeded` | done | `--ok` `#0f9d6f` | none |
+| `failed` / `timeout` | failed / timeout | `--bad` `#d92d3c` | none |
+| `cancelled` | cancelled | `--warn` `#b7791f` | none |
 
 Motion is limited to one signature: `agent-pulse`, a 2.4s glow on active sprites, disabled under
 `prefers-reduced-motion`. There are no spinners.
 
 ## Glass rule
 
-`.glass` (55% `#12141a` + 8px blur + hairline) is the semantic cue for **agent-generated content
+`.glass` (72% white + 8px blur + hairline) is the semantic cue for **agent-generated content
 only**: agent activity feeds and the orchestrator plan strategy. Human-authored surfaces (inputs,
 version metadata, tables) never use it, so frosted panels always answer "the agent wrote this".
 
@@ -80,6 +84,16 @@ version metadata, tables) never use it, so frosted panels always answer "the age
 `⌘/Ctrl+K` toggles `components/CommandPalette.tsx`: run/cancel a cycle, load the demo project,
 upload, switch center surface, exit compare, refresh project. Arrow keys move, `↵` runs, `Esc`
 closes. Every command maps to an existing handler — the palette adds no new behaviour.
+
+## Density primitives (research lab)
+
+- `.kpi` cards replace summary paragraphs: uppercase 9.5px key, mono value, hairline box.
+- `MiniBars` (`components/MiniBars.tsx`) is the chart primitive used instead of numeric tables —
+  one row per series, value on the right, optional `.barmark` hairline for the earlier value, tone
+  from `--accent` / `--ok` / `--warn` / `--bad`.
+- `.tip` carries the short explanation on hover and keyboard focus (`tabIndex={0}`), so prose and
+  charts are never both on screen for the same fact.
+- `.seqgrid` renders the sequence as a clickable residue grid; label kinds keep their own hue.
 
 ## Honesty constraints
 

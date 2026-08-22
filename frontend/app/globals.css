@@ -1,26 +1,28 @@
-/* DYB Pro design system — true-black, hairline, calm-density workspace.
+/* DYB Pro design system — light, hairline, calm-density workspace: clean grays and
+   deep slates punctuated by saturated blurple/indigo/cyan accents.
    Tokens and rules are documented in DESIGN_SYSTEM.md. */
 :root {
-  --bg: #000000;
-  --raised: #08090a;
-  --panel: #0c0d0f;
-  --panel-2: #121316;
-  --input: #121316;
-  --line: #1b1d20;
-  --line-strong: #2a2d31;
-  --text: #ecedee;
-  --muted: #9ba1a6;
-  --faint: #6b7075;
-  --accent: #5e6ad2;
-  --accent-2: #5b8cff;
-  --ok: #35c08e;
-  --warn: #e8a33d;
-  --bad: #f0525b;
-  --thinking: #a78bfa;
-  --searching: #5b8cff;
-  --writing: #35c08e;
-  --idle: #4a4f55;
-  --glass: rgba(18, 20, 26, 0.55);
+  --bg: #eef0f4;
+  --raised: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #f4f6f9;
+  --input: #ffffff;
+  --line: #dfe3e9;
+  --line-strong: #c3c9d2;
+  --text: #0f1216;
+  --muted: #545c66;
+  --faint: #7d858f;
+  --accent: #4f46e5;
+  --accent-2: #2563eb;
+  --accent-3: #0891b2;
+  --ok: #0f9d6f;
+  --warn: #b7791f;
+  --bad: #d92d3c;
+  --thinking: #7c3aed;
+  --searching: #2563eb;
+  --writing: #059669;
+  --idle: #98a0aa;
+  --glass: rgba(255, 255, 255, 0.72);
   --left-w: 300px;
   --right-w: 322px;
   --top-h: 44px;
@@ -354,7 +356,7 @@ button.tab[aria-selected="true"] {
   position: relative;
   min-height: 0;
   background:
-    radial-gradient(120% 90% at 50% 20%, rgba(94, 106, 210, 0.06), transparent 70%),
+    radial-gradient(120% 90% at 50% 20%, rgba(79, 70, 229, 0.08), transparent 70%),
     var(--bg);
   overflow: hidden;
 }
@@ -582,7 +584,7 @@ button.tab[aria-selected="true"] {
 .palette-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(15, 18, 22, 0.32);
   display: grid;
   justify-items: center;
   align-items: start;
@@ -596,7 +598,7 @@ button.tab[aria-selected="true"] {
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 24px 64px rgba(15, 18, 22, 0.18);
 }
 
 .palette input {
@@ -752,7 +754,7 @@ code,
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #0b0f14;
+  background: var(--panel-2);
 }
 
 .search-results {
@@ -779,6 +781,218 @@ code,
 
 .steps li b {
   color: var(--text);
+}
+
+/* ------------------------------------------------- research lab primitives */
+.center-body.lab {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.panel.wide {
+  grid-column: 1 / -1;
+}
+
+.subhead {
+  margin: 12px 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+}
+
+/* Hover explains: short label on the surface, the sentence in the tooltip. */
+.tip {
+  position: relative;
+  cursor: help;
+  border-bottom: 1px dotted var(--line-strong);
+}
+
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  width: max-content;
+  max-width: 280px;
+  padding: 5px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* badges already carry a hairline; the dotted cue would double it */
+.badge.tip {
+  border-bottom-style: solid;
+}
+
+.tip:hover::after,
+.tip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kpi {
+  display: grid;
+  gap: 1px;
+  min-width: 62px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+
+.kpi .k {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+}
+
+.kpi .v {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.barchart {
+  display: grid;
+  gap: 5px;
+}
+
+.barrow {
+  display: grid;
+  grid-template-columns: minmax(96px, 148px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.barrow .name {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bartrack {
+  position: relative;
+  height: 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--panel-2);
+}
+
+.barfill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+}
+
+.barfill.ok {
+  background: var(--ok);
+}
+
+.barfill.warn {
+  background: var(--warn);
+}
+
+.barfill.bad {
+  background: var(--bad);
+}
+
+/* Where a bar came from: hairline marker at the earlier value. */
+.barmark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--line-strong);
+}
+
+.barrow .readout {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.seqgrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-height: 152px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.seqgrid .residue {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.seqgrid .residue:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.seqgrid .residue.sel {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: currentColor;
 }
 
 .error-bar {
@@ -814,6 +1028,10 @@ code,
   .pane.right {
     border-left: 0;
     border-top: 1px solid var(--line);
+  }
+
+  .center-body.lab {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .center {
