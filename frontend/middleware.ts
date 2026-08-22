@@ -37,7 +37,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next({ headers });
   }
 
-  headers.set("WWW-Authenticate", 'Basic realm="Foldsmith preview"');
+  headers.set("WWW-Authenticate", 'Basic realm="DYB Pro preview"');
   return new NextResponse("Authentication required", { status: 401, headers });
 }
 

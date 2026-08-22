@@ -1,7 +1,7 @@
-# Foldsmith — a pre-wetlab protein design OS
+# DYB Pro — a pre-wetlab protein design OS
 
-Foldsmith is a workspace for protein-design scientists. You type a research goal, drop in
-sequences/structures, and Foldsmith runs an autonomous in-silico design cycle that ends in a
+DYB Pro is a workspace for protein-design scientists. You type a research goal, drop in
+sequences/structures, and DYB Pro runs an autonomous in-silico design cycle that ends in a
 **ranked, ready-to-order wet-lab shortlist** plus a **git-like version history** of every design
 it ever proposed.
 
@@ -47,7 +47,7 @@ See [DEMO.md](DEMO.md) for the narrated script, [REQUIREMENTS.md](REQUIREMENTS.m
 
 ## Modes
 
-Foldsmith never pretends to be Devin. The execution provider of every agent run is recorded and
+DYB Pro never pretends to be Devin. The execution provider of every agent run is recorded and
 displayed:
 
 * `devin` — real Devin sessions (requires `DEVIN_API_KEY`). Orchestrator + children, tags,
@@ -75,8 +75,8 @@ execution, so nothing extra is required for development.
 
 ## Private previews and public structure tools
 
-The web app uses a same-origin `/api/foldsmith` proxy by default. The browser only sends an API
-key when a scientist explicitly enters an override; the server-side `FOLDSMITH_API_KEY` is kept
+The web app uses a same-origin `/api/dyb-pro` proxy by default. The browser only sends an API
+key when a scientist explicitly enters an override; the server-side `DYB_PRO_API_KEY` is kept
 out of the browser bundle. Set `NEXT_PUBLIC_API_BASE` only for legacy direct-to-backend
 development. For private previews, set both `APP_BASIC_AUTH_USER` and
 `APP_BASIC_AUTH_PASSWORD` to enable the optional HTTP Basic-auth gate.

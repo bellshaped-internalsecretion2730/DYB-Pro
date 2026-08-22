@@ -18,7 +18,7 @@ async function handleRequest(
     return Response.json({ detail: "method not allowed" }, { status: 405, headers: noStore() });
   }
 
-  const backend = (process.env.FOLDSMITH_BACKEND_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+  const backend = (process.env.DYB_PRO_BACKEND_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
   const target = `${backend}/api/${path.join("/")}${request.nextUrl.search}`;
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
@@ -26,8 +26,8 @@ async function handleRequest(
   headers.set(
     "x-api-key",
     request.headers.get("x-api-key") ||
-      process.env.FOLDSMITH_API_KEY ||
-      "foldsmith-demo-scientist",
+      process.env.DYB_PRO_API_KEY ||
+      "dyb-pro-demo-scientist",
   );
 
   const controller = new AbortController();

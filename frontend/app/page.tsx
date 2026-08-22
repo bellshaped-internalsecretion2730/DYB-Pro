@@ -185,7 +185,7 @@ export default function Workspace() {
       <header className="top">
         <div>
           <div className="brand">
-            FOLD<span>SMITH</span>
+            DYB<span> Pro</span>
           </div>
           <div className="tagline">pre-wetlab protein design OS</div>
         </div>
