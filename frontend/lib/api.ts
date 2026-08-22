@@ -213,6 +213,70 @@ export type Shortlist = {
   commits: { label: string; commit: string }[];
 };
 
+export type ResearchFinding = {
+  topic_key: string;
+  topic: string;
+  from_cache: boolean;
+  provider: string;
+  findings: { claim?: string; citation?: string; implication?: string }[];
+};
+
+export type ResearchEvent = {
+  id: string;
+  project_id: string;
+  status: "queued" | "running" | "done" | "failed";
+  trigger: string;
+  triggers: { trigger: string; ref?: string | null; detail?: string; at: string }[];
+  coalesced: number;
+  summary: string;
+  changed: Record<string, unknown>;
+  findings: ResearchFinding[];
+  metrics: Record<string, unknown>;
+  drift: Record<string, unknown>;
+  cache_hits: number;
+  cache_writes: number;
+  provider: string;
+  devin_session_url?: string | null;
+  acus: number;
+  error?: string | null;
+  created_at: string;
+  finished_at?: string | null;
+};
+
+export type ResearchNote = {
+  id: string;
+  topic_key: string;
+  topic: string;
+  question: string;
+  findings: { claim?: string; citation?: string; implication?: string }[];
+  citations: string[];
+  provider: string;
+  devin_session_url?: string | null;
+  reuse_count: number;
+  created_at: string;
+  last_used_at: string;
+};
+
+export type DaemonStatus = {
+  enabled: boolean;
+  provider: string | null;
+  debounce_seconds: number;
+  tick_seconds: number;
+  queued: number;
+  running: number;
+  failed: number;
+  last_event_at?: string | null;
+  cached_topics: number;
+};
+
+export type ProjectResearch = {
+  daemon: DaemonStatus;
+  session: { session_url?: string | null; status: string; messages_sent: number } | null;
+  events: ResearchEvent[];
+  notes: ResearchNote[];
+  cache: { topics: number; reuses: number; note: string };
+};
+
 export type Observation = {
   id: string;
   role: string;

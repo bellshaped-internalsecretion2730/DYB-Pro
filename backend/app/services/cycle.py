@@ -18,7 +18,7 @@ from app.devin import prompts as promptlib
 from app.devin.runner import PROVIDER_DEVIN, AgentSupervisor, LaunchSpec
 from app.devin.schemas import PLAN_SCHEMA, ROLES, schema_for
 from app.models import AgentRun, Artifact, DesignCycle, Observation, Project, ProteinCommit, utcnow
-from app.services import analysis, calibration, learning, ranking, wetlab
+from app.services import analysis, calibration, learning, ranking, research, wetlab
 from app.services.evaluation import Candidate, Evaluation, evaluate_all
 from app.storage import store
 from app.toolkit import developability as dev
@@ -627,6 +627,15 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                 "economics": pack.get("economics"),
                 "narrative": narrative,
             },
+        )
+        # The daemon is told what happened rather than run here: a cycle that commits thirteen
+        # designs must produce one coalesced research event, on the daemon's own worker.
+        research.enqueue(
+            db,
+            project.id,
+            "cycle",
+            ref=cycle.id,
+            detail=f"round {cycle.round}: {len(commits)} commit(s), {len(passing)} passing",
         )
         db.commit()
         return cycle

@@ -1,6 +1,6 @@
 """Drift between in-silico proxies and measured wet-lab results.
 
-This is the only honest source of a hit rate in Foldsmith: it is computed from `MeasuredResult`
+This is the only honest source of a hit rate in DYB Pro: it is computed from `MeasuredResult`
 rows a user ingested, never from the heuristics' own confidence. With fewer than
 `MIN_PAIRS_FOR_AGREEMENT` measurements for an objective the agreement is reported as `None` rather
 than as a small-sample number that would read as calibration.

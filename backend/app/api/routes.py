@@ -36,6 +36,7 @@ from app.models import (
     Observation,
     Project,
     ProteinCommit,
+    ResearchEvent,
     User,
 )
 from app.security import (
@@ -47,7 +48,7 @@ from app.security import (
     require_role,
     usage_snapshot,
 )
-from app.services import calibration, ingest, learning, wetlab
+from app.services import calibration, ingest, learning, research, wetlab
 from app.storage import store
 from app.toolkit import sequence as seqlib
 from app.versioning import (
@@ -59,7 +60,7 @@ from app.versioning import (
     lineage,
     merge_branches,
 )
-from app.worker import cancel_cycle_task, enqueue_cycle
+from app.worker import cancel_cycle_task, enqueue_cycle, enqueue_research_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -172,7 +173,9 @@ async def upload(
         result = ingest.ingest_file(db, project, file.filename or "upload.txt", data, branch)
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    event = research.enqueue(db, project.id, "upload", ref=file.filename, detail=str(result))
     db.commit()
+    enqueue_research_event(event.id)
     return result
 
 
@@ -472,8 +475,16 @@ def add_result(
             },
         )
     )
+    event = research.enqueue(
+        db,
+        project_id,
+        "measured_result",
+        ref=commit.id,
+        detail=f"{payload.assay} {payload.value} {payload.unit} ({payload.outcome})",
+    )
     db.commit()
     db.refresh(result)
+    enqueue_research_event(event.id)
     return _result_out(result)
 
 
@@ -497,6 +508,51 @@ def project_drift(project_id: str, db: Session = Depends(get_db), user: User = v
     """Proxy-vs-measurement agreement for this project, plus what is still missing to have any."""
     require_project(db, user, project_id)
     return calibration.project_calibration(db, project_id)
+
+
+# ------------------------------------------------------------- research daemon
+
+
+@router.get("/research/daemon", tags=["research"])
+def research_daemon(db: Session = Depends(get_db), user: User = viewer) -> dict:
+    """Whether the daemon is alive, what it is waiting on, and which provider it would use."""
+    return research.daemon_status(db)
+
+
+@router.get("/projects/{project_id}/research", tags=["research"])
+def project_research(
+    project_id: str,
+    limit: int = Query(25, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: User = viewer,
+) -> dict:
+    """Research events for this lineage plus the append-only cache they were answered from."""
+    require_project(db, user, project_id)
+    return research.project_research(db, project_id, limit=limit)
+
+
+@router.post("/projects/{project_id}/research", tags=["research"])
+def trigger_research(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = scientist,
+) -> dict:
+    """Ask the daemon to look now. Coalesces into a queued event rather than starting a second one."""
+    require_project(db, user, project_id, write=True)
+    event = research.enqueue(db, project_id, "manual", detail=f"requested by {user.email}")
+    db.commit()
+    enqueue_research_event(event.id)
+    db.refresh(event)
+    return research.event_payload(event)
+
+
+@router.get("/research/events/{event_id}", tags=["research"])
+def research_event(event_id: str, db: Session = Depends(get_db), user: User = viewer) -> dict:
+    event = db.get(ResearchEvent, event_id)
+    if event is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "research event not found")
+    require_project(db, user, event.project_id)
+    return research.event_payload(event)
 
 
 # -------------------------------------------------------------------- versions
@@ -588,7 +644,7 @@ def commit_structure(
     return Response(
         content=data,
         media_type="chemical/x-pdb",
-        headers={"X-Foldsmith-Structure-Source": commit.structure_source},
+        headers={"X-DYB-Pro-Structure-Source": commit.structure_source},
     )
 
 

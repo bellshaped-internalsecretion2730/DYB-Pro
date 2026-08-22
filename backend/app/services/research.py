@@ -313,8 +313,8 @@ def _daemon_session(
         return existing
     state = client.create_session(
         prompt,
-        title=f"Foldsmith research daemon — {project.name}",
-        tags=["foldsmith", "research-daemon", f"project:{project.id}"],
+        title=f"DYB Pro research daemon — {project.name}",
+        tags=["dyb-pro", "research-daemon", f"project:{project.id}"],
         max_acu_limit=settings.research_acu_limit,
         structured_output_schema=schema_for("literature"),
     )
@@ -332,7 +332,7 @@ def _daemon_session(
 
 def daemon_prompt(project: Project, change: Change, drift: dict, topics: list[dict]) -> str:
     lines = [
-        f"You are Foldsmith's research daemon for project '{project.name}'.",
+        f"You are DYB Pro's research daemon for project '{project.name}'.",
         f"Research goal: {project.goal}",
         "",
         "Something changed in the protein lineage. Research only the open questions below, and "

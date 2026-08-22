@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import AgentSwarm from "@/components/AgentSwarm";
 import ProviderBadge from "@/components/ProviderBadge";
+import ResearchPane from "@/components/ResearchPane";
 import ShortlistPanel from "@/components/ShortlistPanel";
 import VersionDag from "@/components/VersionDag";
 import {
@@ -14,6 +15,7 @@ import {
   type Graph,
   type Observation,
   type Project,
+  type ProjectResearch,
   type Provider,
   type Shortlist,
 } from "@/lib/api";
@@ -30,6 +32,7 @@ export default function Workspace() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [timeline, setTimeline] = useState<Observation[]>([]);
   const [shortlist, setShortlist] = useState<Shortlist | null>(null);
+  const [research, setResearch] = useState<ProjectResearch | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
@@ -56,20 +59,23 @@ export default function Workspace() {
   }, [loadProjects]);
 
   const refreshProject = useCallback(async (id: string) => {
-    const [p, g, t] = await Promise.all([
+    const [p, g, t, r] = await Promise.all([
       api.get<Project>(`/projects/${id}`),
       api.get<Graph>(`/projects/${id}/graph`),
       api.get<Observation[]>(`/projects/${id}/timeline?limit=80`),
+      api.get<ProjectResearch>(`/projects/${id}/research`),
     ]);
     setProject(p);
     setGraph(g);
     setTimeline(t);
+    setResearch(r);
   }, []);
 
   const selectProject = useCallback(
     async (p: Project) => {
       setProject(p);
       setShortlist(null);
+      setResearch(null);
       setAgents([]);
       setBrief(p.goal);
       try {
@@ -164,6 +170,20 @@ export default function Workspace() {
       // the commit/cycle counters and DAG would keep their pre-cycle values.
       await refreshProject(project.id);
       await loadProjects();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function triggerResearch() {
+    if (!project) return;
+    setBusy("research");
+    setError(null);
+    try {
+      await api.post(`/projects/${project.id}/research`);
+      await refreshProject(project.id);
     } catch (e) {
       fail(e);
     } finally {
@@ -297,6 +317,19 @@ export default function Workspace() {
             and citations.
           </p>
           <VersionDag graph={graph} />
+        </section>
+
+        <section className="panel">
+          <h2>Research daemon</h2>
+          <p className="hint">
+            Always-live loop, separate from design cycles: it watches commits, uploads and measured
+            results, reuses cached research, and re-estimates proxy-vs-measurement drift.
+          </p>
+          <ResearchPane
+            research={research}
+            onTrigger={triggerResearch}
+            busy={busy === "research"}
+          />
         </section>
 
         <section className="panel">
