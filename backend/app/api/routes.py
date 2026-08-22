@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.pharma_routes import router as pharma_router
+from app.api.research_routes import router as lab_router
 from app.api.schemas import (
     AgentRunOut,
     BranchCreate,
@@ -75,6 +76,9 @@ from app.worker import cancel_cycle_task, enqueue_cycle, enqueue_research_event
 logger = logging.getLogger(__name__)
 router = APIRouter()
 router.include_router(pharma_router)
+# The research-lab loop (papers, labels, wet-lab plans/results, drift) lives under /lab so it
+# stays beside the project research daemon instead of shadowing its routes.
+router.include_router(lab_router, prefix="/lab")
 
 viewer = Depends(require_role("viewer"))
 scientist = Depends(require_role("scientist"))

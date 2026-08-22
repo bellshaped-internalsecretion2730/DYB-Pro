@@ -535,3 +535,261 @@ class PlaybookRef(Base):
     title: Mapped[str] = mapped_column(String(255))
     body_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# --------------------------------------------------------- research lab loop
+# One ResearchProject per project drives the continuous wet-lab loop: an append-only event
+# log, a cached paper corpus, residue labels, hypotheses, wet-lab plans and results, the
+# per-metric drift models they calibrate, and the debounced daemon queue behind all of it.
+
+
+class ResearchProject(Base):
+    """One research campaign. Every version of the protein hangs off exactly one of these.
+
+    This row is the single source of truth for the continuous loop: it carries the daemon's
+    liveness, the merged knowledge version, and the per-metric drift calibration state.
+    """
+
+    __tablename__ = "research_projects"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    question: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), default="live")  # live|paused
+    daemon_status: Mapped[str] = mapped_column(String(32), default="idle")
+    # idle|working|queued|degraded (degraded = Devin unreachable, work is queued not faked)
+    daemon_detail: Mapped[str] = mapped_column(Text, default="")
+    daemon_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    daemon_session_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    daemon_provider: Mapped[str] = mapped_column(String(32), default="local-simulation")
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    knowledge_version: Mapped[int] = mapped_column(Integer, default=0)
+    event_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LabResearchEvent(Base):
+    """Append-only research record. Rows are never updated or deleted: cache is never discarded."""
+
+    __tablename__ = "lab_research_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    research_project_id: Mapped[str] = mapped_column(
+        ForeignKey("research_projects.id"), index=True
+    )
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    sequence_no: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(48))
+    # version_created|label_added|diff_detected|literature|metrics|wetlab_plan
+    # |results|learn|insight|proposal|queued|degraded
+    trigger: Mapped[str] = mapped_column(String(64), default="daemon")
+    role: Mapped[str] = mapped_column(String(48), default="research-daemon")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    skills_used: Mapped[list] = mapped_column(JSON, default=list)
+    citations: Mapped[list] = mapped_column(JSON, default=list)
+    provider: Mapped[str] = mapped_column(String(32), default="local-simulation")
+    devin_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    devin_session_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    parent_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ResearchPaper(Base):
+    """Immutable paper cache. Keyed by DOI/title hash so repeats never duplicate or overwrite."""
+
+    __tablename__ = "research_papers"
+    __table_args__ = (
+        UniqueConstraint("research_project_id", "paper_key", name="uq_paper_project_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    research_project_id: Mapped[str] = mapped_column(
+        ForeignKey("research_projects.id"), index=True
+    )
+    paper_key: Mapped[str] = mapped_column(String(64), index=True)
+    doi: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title: Mapped[str] = mapped_column(Text, default="")
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    venue: Mapped[str] = mapped_column(String(255), default="")
+    authors: Mapped[list] = mapped_column(JSON, default=list)
+    abstract: Mapped[str] = mapped_column(Text, default="")
+    url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source: Mapped[str] = mapped_column(String(48), default="openalex")
+    citation_count: Mapped[int] = mapped_column(Integer, default=0)
+    relevance: Mapped[float] = mapped_column(Float, default=0.0)
+    extracted_metrics: Mapped[list] = mapped_column(JSON, default=list)
+    query: Mapped[str] = mapped_column(Text, default="")
+    citation: Mapped[str] = mapped_column(Text, default="")
+    event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MetricDefinition(Base):
+    """Canonical metric vocabulary, published from skill.wetlab_metrics so the UI can explain units."""
+
+    __tablename__ = "metric_definitions"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    unit: Mapped[str] = mapped_column(String(32), default="")
+    higher_is_better: Mapped[bool] = mapped_column(Boolean, default=True)
+    assay: Mapped[str] = mapped_column(Text, default="")
+    assay_sd: Mapped[float] = mapped_column(Float, default=0.0)
+    sd_kind: Mapped[str] = mapped_column(String(24), default="absolute")
+    pass_rule: Mapped[dict] = mapped_column(JSON, default=dict)
+    skill: Mapped[str] = mapped_column(String(64), default="skill.wetlab_metrics")
+    citations: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class Hypothesis(Base):
+    """A falsifiable prediction attached to a version, resolved by wet-lab results."""
+
+    __tablename__ = "hypotheses"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    research_project_id: Mapped[str] = mapped_column(
+        ForeignKey("research_projects.id"), index=True
+    )
+    commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    statement: Mapped[str] = mapped_column(Text)
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    metric: Mapped[str] = mapped_column(String(64), default="")
+    predicted_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    predicted_sd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="open")  # open|supported|refuted
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    citations: Mapped[list] = mapped_column(JSON, default=list)
+    event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ResidueLabel(Base):
+    """Scientist annotation on residues. Versioned: refining a label writes a new row."""
+
+    __tablename__ = "residue_labels"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    commit_id: Mapped[str] = mapped_column(String(64), index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="note")
+    # active_site|liability|epitope|mutation_intent|note
+    name: Mapped[str] = mapped_column(String(128), default="")
+    residues: Mapped[list] = mapped_column(JSON, default=list)  # 1-based positions
+    note: Mapped[str] = mapped_column(Text, default="")
+    parent_label_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    superseded_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WetlabPlan(Base):
+    """A minimal, ranked experiment pack proposed for one version."""
+
+    __tablename__ = "wetlab_plans"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    research_project_id: Mapped[str] = mapped_column(
+        ForeignKey("research_projects.id"), index=True
+    )
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    commit_id: Mapped[str] = mapped_column(String(64), index=True)
+    event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="proposed")  # proposed|complete
+    risk: Mapped[dict] = mapped_column(JSON, default=dict)
+    predictions: Mapped[dict] = mapped_column(JSON, default=dict)  # metric -> {value, sd, source}
+    constructs: Mapped[list] = mapped_column(JSON, default=list)
+    assays: Mapped[list] = mapped_column(JSON, default=list)
+    controls: Mapped[list] = mapped_column(JSON, default=list)
+    thresholds: Mapped[list] = mapped_column(JSON, default=list)
+    failure_modes: Mapped[list] = mapped_column(JSON, default=list)
+    total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    information_per_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    skills_used: Mapped[list] = mapped_column(JSON, default=list)
+    citations: Mapped[list] = mapped_column(JSON, default=list)
+    provider: Mapped[str] = mapped_column(String(32), default="local-simulation")
+    devin_session_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class WetlabResult(Base):
+    """Measured (or honestly simulated) results committed back onto a version."""
+
+    __tablename__ = "wetlab_results"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    research_project_id: Mapped[str] = mapped_column(
+        ForeignKey("research_projects.id"), index=True
+    )
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    commit_id: Mapped[str] = mapped_column(String(64), index=True)
+    plan_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default="simulator")
+    # simulator|scientist|csv|json — a simulated row is never presented as a real measurement
+    construct_label: Mapped[str] = mapped_column(String(128), default="")
+    measurements: Mapped[list] = mapped_column(JSON, default=list)  # normalised by skill
+    residuals: Mapped[dict] = mapped_column(JSON, default=dict)  # metric -> {predicted, measured, z}
+    error_model: Mapped[dict] = mapped_column(JSON, default=dict)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    raw: Mapped[dict] = mapped_column(JSON, default=dict)
+    artifact_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    operator: Mapped[str] = mapped_column(String(128), default="")
+    event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DriftModel(Base):
+    """Per-metric in-silico vs wet-lab calibration, updated after every result."""
+
+    __tablename__ = "drift_models"
+    __table_args__ = (
+        UniqueConstraint("research_project_id", "metric", name="uq_drift_project_metric"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    research_project_id: Mapped[str] = mapped_column(
+        ForeignKey("research_projects.id"), index=True
+    )
+    metric: Mapped[str] = mapped_column(String(64), index=True)
+    n_observations: Mapped[int] = mapped_column(Integer, default=0)
+    bias: Mapped[float] = mapped_column(Float, default=0.0)
+    bias_sd: Mapped[float] = mapped_column(Float, default=0.0)
+    prior_sd: Mapped[float] = mapped_column(Float, default=0.0)
+    slope: Mapped[float] = mapped_column(Float, default=1.0)
+    intercept: Mapped[float] = mapped_column(Float, default=0.0)
+    residual_sd: Mapped[float] = mapped_column(Float, default=0.0)
+    rmse: Mapped[float] = mapped_column(Float, default=0.0)
+    history: Mapped[list] = mapped_column(JSON, default=list)
+    method: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DaemonTask(Base):
+    """Queued daemon work. Debounced by key, never dropped: a superseded task is marked, not deleted."""
+
+    __tablename__ = "daemon_tasks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uid)
+    research_project_id: Mapped[str] = mapped_column(
+        ForeignKey("research_projects.id"), index=True
+    )
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(48))  # version|label|results|manual
+    debounce_key: Mapped[str] = mapped_column(String(128), index=True)
+    commit_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(24), default="queued")
+    # queued|coalesced|processing|done|failed
+    coalesced_into: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    coalesced_count: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

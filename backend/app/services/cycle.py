@@ -218,7 +218,7 @@ def _observe(
     db.flush()
 
 
-def _store_structure(project_id: str, label: str, pdb: str, db: Session) -> str | None:
+def store_structure(project_id: str, label: str, pdb: str, db: Session) -> str | None:
     if not pdb:
         return None
     key = f"{project_id}/structures/{label.replace('/', '_')}.pdb"
@@ -530,7 +530,7 @@ def run_cycle(db: Session, cycle_id: str, sleep=time.sleep) -> DesignCycle:
                 runs_by_id.get(source_candidate.source_run_id) if source_candidate else None
             )
             mutation_summary = "+".join(m.get("mutation") for m in ev.mutations) or "no change"
-            structure_key = _store_structure(project.id, f"{cycle.id[:8]}-{cand.label}", ev.structure_pdb, db)
+            structure_key = store_structure(project.id, f"{cycle.id[:8]}-{cand.label}", ev.structure_pdb, db)
             commit = commit_design(
                 db,
                 project_id=project.id,

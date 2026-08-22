@@ -468,3 +468,303 @@ export type Observation = {
   payload: Record<string, unknown>;
   created_at: string;
 };
+
+export type Commit = {
+  id: string;
+  short_id: string;
+  project_id: string;
+  branch: string;
+  label: string;
+  message: string;
+  sequence: string;
+  structure_key?: string | null;
+  structure_source?: string;
+  parent_ids?: string[];
+  mutations: { mutation?: string | null }[];
+  scores: Record<string, number>;
+  uncertainty: Record<string, number>;
+  filters?: Record<string, unknown>;
+  rationale: string;
+  agent_role: string;
+  provider: string;
+  devin_session_url?: string | null;
+  citations?: unknown[];
+  cycle_round: number;
+  created_at: string;
+};
+
+// ------------------------------------------------------ research lab loop types
+// The /lab surface: cached papers, residue labels, wet-lab plans/results, drift models and the
+// proposal they feed. Distinct from the project research daemon above, hence the Lab* prefixes.
+
+export type DaemonTask = {
+  id: string;
+  kind: string;
+  status: string;
+  commit_id?: string | null;
+  coalesced_count: number;
+  attempts: number;
+  error?: string | null;
+  created_at: string;
+  run_after: string;
+  processed_at?: string | null;
+  event_id?: string | null;
+};
+
+export type LabDaemonStatus = {
+  campaign_id: string;
+  project_id: string;
+  name: string;
+  status: string;
+  detail: string;
+  provider: string;
+  devin_session_url?: string | null;
+  heartbeat_at?: string | null;
+  knowledge_version: number;
+  event_sequence: number;
+  queue: Record<string, number>;
+  queue_depth: number;
+  tick_seconds: number;
+  debounce_seconds: number;
+  tasks: DaemonTask[];
+};
+
+export type LabResearchEvent = {
+  id: string;
+  sequence_no: number;
+  kind: string;
+  trigger: string;
+  role: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  skills_used: string[];
+  citations: string[];
+  provider: string;
+  devin_session_url?: string | null;
+  commit_id?: string | null;
+  created_at: string;
+};
+
+export type Paper = {
+  paper_key: string;
+  title: string;
+  doi?: string | null;
+  year?: number | null;
+  venue?: string | null;
+  url?: string | null;
+  source: string;
+  citation: string;
+  citation_count: number;
+  relevance: number;
+  extracted_metrics: { name: string; value: number; unit: string; context: string }[];
+  query: string;
+  first_seen_at: string;
+};
+
+export type Drift = {
+  metric: string;
+  n_observations: number;
+  bias: number;
+  slope: number;
+  intercept: number;
+  residual_sd: number;
+  rmse: number;
+  history: { residual?: number; predicted?: number; measured?: number }[];
+  method: string;
+  updated_at: string;
+};
+
+export type Learned = {
+  campaign_id: string;
+  headline: string;
+  lessons: string[];
+  drift: {
+    metric: string;
+    n: number;
+    bias: number;
+    rmse: number;
+    first_abs_residual: number | null;
+    latest_abs_residual: number | null;
+    shrinking: boolean;
+  }[];
+  versions: {
+    label: string;
+    commit_id: string;
+    mutations: string[];
+    scores: Record<string, number>;
+    measured: Record<string, number | boolean>;
+  }[];
+  paper_count: number;
+  hypotheses: { supported: number; refuted: number; open: number };
+  generated_at: string;
+};
+
+export type DigestVersion = {
+  commit_id: string;
+  short: string;
+  label: string;
+  created_at?: string | null;
+  mutations: string[];
+  scores: Record<string, number>;
+  measured: Record<string, number | boolean>;
+  labels: { kind: string; name: string; residues: number[]; note: string }[];
+  provider: string;
+};
+
+export type SeedCampaignSummary = {
+  campaign_id: string;
+  seeded: boolean;
+  reason?: string;
+  versions?: { id: string; label: string }[];
+  papers?: number;
+  drift_metrics?: Record<string, { n: number; bias: number; rmse: number }>;
+  lab_bias?: Record<string, number>;
+  daemon: LabDaemonStatus;
+};
+
+export type CampaignOverview = {
+  campaign: {
+    id: string;
+    project_id: string;
+    name: string;
+    question: string;
+    knowledge_version: number;
+    daemon_status: string;
+  };
+  daemon: LabDaemonStatus;
+  digest: {
+    version_count: number;
+    paper_count: number;
+    result_count: number;
+    versions: DigestVersion[];
+    head: DigestVersion | null;
+    drift: { metric: string; n: number; bias: number; rmse: number }[];
+  };
+  learned: Learned;
+  proposal: Proposal | null;
+  events: LabResearchEvent[];
+};
+
+export type LabelNode = {
+  id: string;
+  kind: string;
+  name: string;
+  residues: number[];
+  note: string;
+  version: number;
+  superseded: boolean;
+  created_at?: string | null;
+  refinements: LabelNode[];
+};
+
+export type LabelsResponse = {
+  commit_id: string;
+  sequence_length: number;
+  labels: Label[];
+  tree: LabelNode[];
+};
+
+export type MetricDefinitionOut = {
+  name: string;
+  unit: string;
+  higher_is_better: boolean;
+  assay: string;
+  assay_sd: number;
+  sd_kind: string;
+  pass_rule: string;
+  skill: string;
+  citations: string[];
+};
+
+export type RiskReport = {
+  commit_id: string;
+  predictions: Record<string, Prediction>;
+  skills_used: string[];
+  risk: { risks: Risk[]; failure_modes: string[] };
+};
+
+export type Label = {
+  id: string;
+  kind: string;
+  name: string;
+  residues: number[];
+  note: string;
+  version: number;
+  parent_label_id?: string | null;
+  superseded_by?: string | null;
+  created_at: string;
+};
+
+export type Prediction = {
+  value: number | boolean | null;
+  sd: number;
+  unit: string;
+  method: string;
+  skill: string;
+  calibrated?: boolean;
+};
+
+export type Risk = { risk: string; level: string; detail: string; mitigation: string };
+
+export type WetlabPlan = {
+  id: string;
+  commit_id: string;
+  status: string;
+  risk: { risks: Risk[]; failure_modes: string[] };
+  predictions: Record<string, Prediction>;
+  constructs: {
+    label: string;
+    vector: string;
+    orf: string;
+    expression_host: string;
+    route: string;
+    notes: string;
+    build_cost_usd: number;
+  }[];
+  assays: { assay: string; measures: string[]; cost_usd: number; days: number; readout: string }[];
+  controls: { control: string; why: string }[];
+  thresholds: { metric: string; accept: string; reject: string }[];
+  failure_modes: string[];
+  total_cost_usd: number;
+  information_per_usd: number;
+  rationale: string;
+  skills_used: string[];
+  citations: string[];
+  provider: string;
+};
+
+export type WetlabResult = {
+  id: string;
+  commit_id: string;
+  plan_id?: string | null;
+  source: string;
+  construct_label: string;
+  measurements: { metric: string; value: number | boolean | null; unit: string; assay: string; passed?: boolean | null }[];
+  residuals: Record<string, { predicted: number; measured: number; residual: number; z?: number }>;
+  error_model: { description: string; seed?: number | null };
+  notes: string;
+  operator: string;
+  created_at: string;
+};
+
+export type Proposal = {
+  proposed: {
+    label: string;
+    mutations: string[];
+    sequence: string;
+    rationale: string;
+    scores: Record<string, number>;
+    developability_index?: number | null;
+    predicted_wetlab: Record<string, Prediction>;
+    predicted_delta: Record<string, number>;
+    citations: string[];
+  } | null;
+  target_metric: string;
+  reason?: string;
+  why_this_metric?: string;
+  ranking?: { label: string; score: number }[];
+  considered?: { label: string; mutations: string[]; passed_filters: boolean; rationale: string }[];
+  excluded_by_history?: string[];
+  protected_residues?: number[];
+  skills_used?: string[];
+};

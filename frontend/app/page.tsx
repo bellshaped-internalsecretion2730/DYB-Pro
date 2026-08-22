@@ -10,6 +10,7 @@ import FoldStrip from "@/components/FoldStrip";
 import ProteinViewer from "@/components/ProteinViewer";
 import ProviderBadge from "@/components/ProviderBadge";
 import ResearchPane from "@/components/ResearchPane";
+import ResearchWorkspace from "@/components/ResearchWorkspace";
 import ShortlistPanel from "@/components/ShortlistPanel";
 import StructureViewer from "@/components/StructureViewer";
 import VersionDag from "@/components/VersionDag";
@@ -36,7 +37,8 @@ type CenterTab =
   | "research"
   | "log"
   | "3d-structure"
-  | "databases";
+  | "databases"
+  | "lab";
 
 export default function Workspace() {
   const [provider, setProvider] = useState<Provider | null>(null);
@@ -368,6 +370,7 @@ export default function Workspace() {
                     ["log", "observation log"],
                     ["3d-structure", "3d structure"],
                     ["databases", "databases"],
+                    ["lab", "research lab"],
                   ] as [CenterTab, string][]
                 ).map(([id, label]) => (
                   <button
@@ -402,6 +405,19 @@ export default function Workspace() {
                     Inspect the selected commit structure when an experimental PDB is available.
                   </p>
                   <StructureViewer commitId={selected?.id ?? project?.head_commit_id ?? null} />
+                </section>
+              </div>
+            )}
+
+            {tab === "lab" && (
+              <div className="center-body">
+                <section className="panel">
+                  <h2>Research lab loop</h2>
+                  <p className="hint">
+                    Cached literature, residue labels, wet-lab plans and measured results, with the
+                    drift they calibrate and the next version they propose.
+                  </p>
+                  <ResearchWorkspace projectId={project?.id ?? null} />
                 </section>
               </div>
             )}

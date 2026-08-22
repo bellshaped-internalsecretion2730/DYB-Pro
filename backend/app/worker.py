@@ -36,6 +36,10 @@ celery_app.conf.update(
             "task": "dyb-pro.research_tick",
             "schedule": settings.research_tick_seconds,
         },
+        "lab-daemon-tick": {
+            "task": "dyb-pro.lab_daemon_tick",
+            "schedule": settings.daemon_tick_seconds,
+        },
         "pharmakon-research-daemon": {
             "task": "pharmakon.daemon_tick",
             "schedule": crontab(hour="3", minute="0"),
@@ -105,6 +109,45 @@ def enqueue_research_event(event_id: str) -> str | None:
         return research_event_task.delay(event_id).id
     except Exception as exc:
         logger.warning("celery unavailable (%s); research event %s stays queued", exc, event_id)
+        return None
+
+
+@celery_app.task(name="dyb-pro.lab_daemon_tick")
+def lab_daemon_tick_task(limit: int = 4) -> dict:
+    """Heartbeat of the research-lab loop: drain whatever debounced daemon work is due."""
+    from app.services import daemon as daemon_svc
+
+    if not settings.daemon_enabled:
+        return {"processed": 0, "disabled": True}
+    with session_scope() as db:
+        outcomes = daemon_svc.process_pending(db, limit=limit)
+        return {"processed": len(outcomes), "outcomes": outcomes}
+
+
+@celery_app.task(name="dyb-pro.lab_daemon_task", bind=True, max_retries=0)
+def daemon_task(self, task_id: str) -> dict:
+    """Run one queued daemon task now, for events that should not wait for the next tick."""
+    from app.models import DaemonTask
+    from app.services import daemon as daemon_svc
+
+    with session_scope() as db:
+        task = db.get(DaemonTask, task_id)
+        if task is None:
+            return {"status": "failed", "error": "unknown task"}
+        if task.status != "queued":
+            return {"status": task.status, "skipped": True}
+        task.status = "processing"
+        task.attempts = int(task.attempts or 0) + 1
+        db.flush()
+        return daemon_svc.run_task(db, task)
+
+
+def enqueue_daemon_task(task_id: str) -> str | None:
+    """Hand a task to the worker; if no broker is reachable the tick or API picks it up later."""
+    try:
+        return daemon_task.delay(task_id).id
+    except Exception as exc:  # broker down: the queue is durable, so nothing is lost
+        logger.warning("celery unavailable (%s); daemon task %s stays queued", exc, task_id)
         return None
 
 
