@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Project, User
+from app.models import DrugProgram, Project, User
 from app.security import hash_api_key
 from app.services import ingest
 from app.versioning import get_branch
@@ -93,7 +93,69 @@ def seed_demo_project(db: Session, owner_id: str | None = None) -> Project:
     return project
 
 
+DEMO_PROGRAM_OBJECTIVE = (
+    "Find an oral small-molecule ligand for the demo pocket with a predicted potency and ADMET "
+    "profile good enough to justify a first round of wet-lab assays. The target sequence here is a "
+    "public-domain demo surrogate: the binding number is a sequence-derived complementarity proxy, "
+    "not docking, so it ranks molecules and nothing more."
+)
+
+# Public, well-characterised molecules used only as starting fragments so the demo portfolio is
+# not empty. They are not proposed as ligands for this target.
+DEMO_SEED_SMILES = (
+    ("frag-benzamide", "NC(=O)c1ccccc1"),
+    ("frag-aminopyridine", "Nc1ccncc1"),
+    ("frag-indole", "c1ccc2[nH]ccc2c1"),
+    ("frag-anilide", "CC(=O)Nc1ccccc1"),
+    ("frag-phenylpiperazine", "C1CN(CCN1)c1ccccc1"),
+)
+
+
+def seed_demo_program(db: Session, project: Project) -> DrugProgram | None:
+    """Idempotent demo drug program so the Pharmakon board has something to show."""
+    existing = db.scalar(select(DrugProgram).where(DrugProgram.is_demo.is_(True)))
+    if existing is not None:
+        return existing
+
+    program = DrugProgram(
+        project_id=project.id,
+        name="Demo small-molecule program",
+        target_name=project.target_name or "demo target",
+        target_sequence=project.target_sequence,
+        indication="demonstration only",
+        objective=DEMO_PROGRAM_OBJECTIVE,
+        autonomy_level=2,
+        is_demo=True,
+    )
+    db.add(program)
+    db.flush()
+    from app.services.program import commit_molecules
+
+    commits, rejected = commit_molecules(
+        db,
+        program,
+        [
+            {
+                "label": label,
+                "smiles": smiles,
+                "rationale": "seeded demo fragment; not a proposed ligand for this target",
+            }
+            for label, smiles in DEMO_SEED_SMILES
+        ],
+        stage_key=program.current_stage,
+        round_id=None,
+        provider="human",
+    )
+    if rejected:
+        logger.warning("demo program seed dropped %d unparseable fragments", len(rejected))
+    db.flush()
+    logger.info("seeded demo program %s with %d molecules", program.id, len(commits))
+    return program
+
+
 def seed_all(db: Session) -> Project:
     users = seed_users(db)
     scientist = next((u for u in users if u.role == "scientist"), None)
-    return seed_demo_project(db, owner_id=scientist.id if scientist else None)
+    project = seed_demo_project(db, owner_id=scientist.id if scientist else None)
+    seed_demo_program(db, project)
+    return project

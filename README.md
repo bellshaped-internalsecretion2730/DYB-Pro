@@ -27,6 +27,11 @@ open http://localhost:3000
 
 Three clicks: **Load demo project** → **Run design cycle** → **Export wet-lab shortlist**.
 
+**Pharmakon** builds a drug-discovery program on top of that history — small-molecule commits, a
+staged gate ladder with autonomy levels and human signatures, wet-lab experiment proposals, assay
+ingestion, prediction drift and a draft IND-style dossier. See [PHARMAKON.md](PHARMAKON.md), and
+read its "what the numbers are — and are not" section before trusting any prediction.
+
 See [DEMO.md](DEMO.md) for the narrated script, [REQUIREMENTS.md](REQUIREMENTS.md) for scope,
 [ARCHITECTURE.md](ARCHITECTURE.md) for the system design and
 [DEVIN_INTEGRATION.md](DEVIN_INTEGRATION.md) for exactly how the Devin API is used.
@@ -44,6 +49,7 @@ See [DEMO.md](DEMO.md) for the narrated script, [REQUIREMENTS.md](REQUIREMENTS.m
 | Celery experiment queue with logs + retries | `backend/app/worker.py` |
 | Seeded demo project (GB1 + IgG1 CH3) | `backend/app/seed.py` |
 | Backend tests | `backend/tests` |
+| Pharmakon: programs, gates, molecules, dossier | `backend/app/pharma`, `backend/app/chem`, `frontend/app/pharmakon` |
 
 ## Modes
 

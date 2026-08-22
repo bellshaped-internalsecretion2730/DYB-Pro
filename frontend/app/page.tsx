@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import AgentSwarm from "@/components/AgentSwarm";
 import ProviderBadge from "@/components/ProviderBadge";
 import ShortlistPanel from "@/components/ShortlistPanel";
@@ -190,6 +191,7 @@ export default function Workspace() {
         <ProviderBadge provider={provider} />
         {provider?.openai_configured && <span className="badge">OpenAI analysis on</span>}
         <div className="grow" />
+        <Link href="/pharmakon">Pharmakon drug programs →</Link>
         <input
           type="text"
           style={{ width: 220 }}
