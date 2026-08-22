@@ -79,6 +79,18 @@ The compose stack runs Postgres, Redis, MinIO, the API, a Celery worker and the 
 Running the API alone falls back to SQLite, local artifact storage and inline (eager) cycle
 execution, so nothing extra is required for development.
 
+## Private previews and public structure tools
+
+The web app uses a same-origin `/api/dyb-pro` proxy by default. The browser only sends an API
+key when a scientist explicitly enters an override; the server-side `DYB_PRO_API_KEY` is kept
+out of the browser bundle. Set `NEXT_PUBLIC_API_BASE` only for legacy direct-to-backend
+development. For private previews, set both `APP_BASIC_AUTH_USER` and
+`APP_BASIC_AUTH_PASSWORD` to enable the optional HTTP Basic-auth gate.
+
+The workspace also includes an honest-provenance search panel for public RCSB PDB, NIH PubChem
+and EMBL-EBI ChEMBL APIs. A structure viewer renders the selected project's head commit when a
+PDB structure is available, with a raw-PDB download fallback when it is not.
+
 Licensed under the repository's LICENSE. No proprietary third-party code, UI, text or data is
 used; all scoring methods are re-implemented from published, cited literature and are documented
 in `backend/app/toolkit/CITATIONS.md`.

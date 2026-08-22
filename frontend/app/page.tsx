@@ -5,10 +5,12 @@ import Link from "next/link";
 import AgentSwarm from "@/components/AgentSwarm";
 import AskPane from "@/components/AskPane";
 import CommandPalette, { type Command } from "@/components/CommandPalette";
+import DatabaseSearch from "@/components/DatabaseSearch";
 import FoldStrip from "@/components/FoldStrip";
 import ProteinViewer from "@/components/ProteinViewer";
 import ProviderBadge from "@/components/ProviderBadge";
 import ShortlistPanel from "@/components/ShortlistPanel";
+import StructureViewer from "@/components/StructureViewer";
 import VersionDag from "@/components/VersionDag";
 import {
   api,
@@ -25,7 +27,7 @@ import {
 } from "@/lib/api";
 
 const TERMINAL = ["committed", "partial", "failed", "cancelled"];
-type CenterTab = "structure" | "lineage" | "shortlist" | "log";
+type CenterTab = "structure" | "lineage" | "shortlist" | "log" | "3d-structure" | "databases";
 
 export default function Workspace() {
   const [provider, setProvider] = useState<Provider | null>(null);
@@ -332,6 +334,8 @@ export default function Workspace() {
                     ["lineage", "version DAG"],
                     ["shortlist", "wet-lab shortlist"],
                     ["log", "observation log"],
+                    ["3d-structure", "3d structure"],
+                    ["databases", "databases"],
                   ] as [CenterTab, string][]
                 ).map(([id, label]) => (
                   <button
@@ -356,6 +360,30 @@ export default function Workspace() {
                 sequence={sequence}
                 onClearCompare={() => setCompareId(null)}
               />
+            )}
+
+            {tab === "3d-structure" && (
+              <div className="center-body">
+                <section className="panel">
+                  <h2>3D structure</h2>
+                  <p className="hint">
+                    Inspect the selected commit structure when an experimental PDB is available.
+                  </p>
+                  <StructureViewer commitId={selected?.id ?? project?.head_commit_id ?? null} />
+                </section>
+              </div>
+            )}
+
+            {tab === "databases" && (
+              <div className="center-body">
+                <section className="panel">
+                  <h2>Public database search</h2>
+                  <p className="hint">
+                    Search public records with the upstream source and provenance shown explicitly.
+                  </p>
+                  <DatabaseSearch />
+                </section>
+              </div>
             )}
 
             {tab === "lineage" && (

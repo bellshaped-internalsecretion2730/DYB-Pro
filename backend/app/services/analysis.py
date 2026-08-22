@@ -36,6 +36,11 @@ def _client(settings: Settings):
     return OpenAI(api_key=settings.openai_api_key)
 
 
+def _sampling_kwargs(model: str) -> dict:
+    """Reasoning-family models reject an explicit temperature parameter."""
+    return {} if model.startswith("gpt-5") else {"temperature": 0.2}
+
+
 def _deterministic_narrative(payload: dict) -> dict:
     top = (payload.get("ranked") or [{}])[0]
     changed = [
@@ -86,7 +91,7 @@ def narrate_cycle(payload: dict, settings: Settings | None = None) -> dict:
                 },
             ],
             response_format={"type": "json_object"},
-            temperature=0.2,
+            **_sampling_kwargs(settings.openai_model),
         )
         data = json.loads(response.choices[0].message.content or "{}")
         data["provider"] = "openai"
@@ -141,7 +146,7 @@ def analyze_design(
         response = client.chat.completions.create(
             model=settings.openai_vision_model,
             messages=[{"role": "user", "content": content}],
-            temperature=0.2,
+            **_sampling_kwargs(settings.openai_vision_model),
         )
         return {
             "provider": "openai",
