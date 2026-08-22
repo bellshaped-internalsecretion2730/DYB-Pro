@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 
 from sqlalchemy import select
 
 from app.config import get_settings
 from app.models import MeasuredResult, ResearchEvent, ResearchNote
 from app.services import research
+from app.toolkit import developability as dev
 from tests.conftest import headers
 
 
@@ -55,6 +57,19 @@ def test_event_records_change_drift_and_writes_the_cache(db, project, root_commi
         db.scalars(select(ResearchNote.topic_key).where(ResearchNote.project_id == project.id))
     )
     assert notes
+
+
+def test_liability_topics_come_from_the_motif_map_not_the_wrapper_dict():
+    # NGS/NGT are N-glycosylation motifs; the cysteine makes the wrapper's count fields truthy,
+    # which used to raise topics like `liability:cysteine_count` and fail on len(int).
+    seq = "MNGSCKLPNGTAAAA"
+    change = research.Change(head=SimpleNamespace(sequence=seq), previous_head_id=None)
+
+    topics = research.topics_for(change, {}, limit=8)
+
+    liabilities = {t["topic_key"] for t in topics if t["topic_key"].startswith("liability:")}
+    assert liabilities
+    assert liabilities <= {f"liability:{m}" for m in dev.liabilities(seq)["motifs"]}
 
 
 def test_second_event_reuses_the_cache_instead_of_re_researching(db, project, root_commit):

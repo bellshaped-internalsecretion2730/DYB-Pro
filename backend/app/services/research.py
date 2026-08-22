@@ -264,7 +264,8 @@ def topics_for(change: Change, drift: dict, limit: int) -> list[dict]:
         )
 
     if change.head is not None:
-        for motif, hits in sorted((dev.liabilities(change.head.sequence) or {}).items()):
+        motifs = (dev.liabilities(change.head.sequence) or {}).get("motifs") or {}
+        for motif, hits in sorted(motifs.items()):
             if hits:
                 add(
                     f"liability:{motif}",
