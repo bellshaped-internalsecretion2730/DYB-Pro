@@ -12,6 +12,7 @@ from app.services.prices import (
     item_cost,
     item_cost_interval,
 )
+from app.services.problem import classify
 
 LITERATURE_HIT_BAND = (0.10, 0.46)
 CROSS_LAB_SHRINKAGE = 0.5
@@ -148,6 +149,18 @@ def batch_cost(tier: str, candidates: Iterable) -> tuple[float, tuple[float, flo
     return _batch_cost(tier, candidates)
 
 
+def cheapest_tier_for_readout(readout: str, candidates: Iterable) -> str | None:
+    """Return the least-cost tier that declares the requested readout."""
+    candidates = list(candidates)
+    priced: list[tuple[float, str]] = []
+    for tier, metadata in TIERS.items():
+        if readout not in metadata["decides"]:
+            continue
+        cost, _ = _batch_cost(tier, candidates)
+        priced.append((cost, tier))
+    return min(priced)[1] if priced else None
+
+
 def recommended_n(
     clusters_ranked,
     tier: str,
@@ -205,13 +218,46 @@ def wilson(k: int, n: int, z: float = 1.959964) -> tuple[float, float] | None:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
-def filter_performance(rows: Iterable[tuple[dict, object]]) -> dict:
-    """Build filter confusion counts and Wilson intervals from paired measured outcomes."""
+def filter_performance(rows: Iterable[tuple[object, object]], spec=None) -> dict:
+    """Build one-observation-per-design confusion counts and Wilson intervals."""
+    grouped: dict[str, list[tuple[object, object]]] = {}
+    for index, (commit, result) in enumerate(rows):
+        commit_id = getattr(commit, "id", None) or f"row-{index}"
+        grouped.setdefault(commit_id, []).append((commit, result))
     tp = fp = tn = fn = 0
-    for commit, result in rows:
-        actual = result.outcome if result.outcome in {"hit", "miss"} else None
-        if actual is None:
+    conflicting = undecidable = outcome_disagreements = 0
+    for pairs in grouped.values():
+        commit = pairs[0][0]
+        results = [result for _, result in pairs]
+        if spec is None:
+            labels = {
+                result.outcome for result in results if result.outcome in {"hit", "miss"}
+            }
+            disagreements = set()
+        else:
+            deciding_name = spec.deciding_objective
+            deciding_results = [
+                result
+                for result in results
+                if result.objective == deciding_name
+            ]
+            classified = [classify(spec, result) for result in deciding_results]
+            labels = {item["decision"] for item in classified if item["decision"] in {"hit", "miss"}}
+            disagreements = {
+                result.outcome
+                for result, item in zip(deciding_results, classified, strict=False)
+                if result.outcome in {"hit", "miss"}
+                and item["decision"] in {"hit", "miss"}
+                and result.outcome != item["decision"]
+            }
+        outcome_disagreements += bool(disagreements)
+        if len(labels) > 1:
+            conflicting += 1
             continue
+        if not labels:
+            undecidable += 1
+            continue
+        actual = next(iter(labels))
         predicted = bool((commit.filters or {}).get("passed"))
         if predicted and actual == "hit":
             tp += 1
@@ -222,6 +268,8 @@ def filter_performance(rows: Iterable[tuple[dict, object]]) -> dict:
         else:
             tn += 1
     n_paired = tp + fp + tn + fn
+    n_designs = len(grouped)
+    source = "reported_outcome" if spec is None else f"problem_spec_v{spec.version}"
     if n_paired < 10:
         return {
             "tp": tp,
@@ -239,6 +287,11 @@ def filter_performance(rows: Iterable[tuple[dict, object]]) -> dict:
             "specificity_wilson_95": None,
             "fnr_wilson_95": None,
             "n_paired": n_paired,
+            "classification_source": source,
+            "n_designs": n_designs,
+            "conflicting": conflicting,
+            "undecidable": undecidable,
+            "outcome_disagreements": outcome_disagreements,
             "status": "insufficient_data",
             "n_required": 10,
         }
@@ -249,7 +302,19 @@ def filter_performance(rows: Iterable[tuple[dict, object]]) -> dict:
         "specificity": (tn, tn + fp),
         "fnr": (fn, fn + tp),
     }
-    out = {"tp": tp, "fp": fp, "tn": tn, "fn": fn, "n_paired": n_paired, "status": "ok"}
+    out = {
+        "tp": tp,
+        "fp": fp,
+        "tn": tn,
+        "fn": fn,
+        "n_paired": n_paired,
+        "classification_source": source,
+        "n_designs": n_designs,
+        "conflicting": conflicting,
+        "undecidable": undecidable,
+        "outcome_disagreements": outcome_disagreements,
+        "status": "ok",
+    }
     for name, (k, n) in rates.items():
         out[name] = k / n if n else None
         out[f"{name}_wilson_95"] = wilson(k, n)

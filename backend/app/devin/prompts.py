@@ -34,8 +34,9 @@ def orchestrator_prompt(
     history: str,
     available_roles: list[str],
     shortlist_size: int,
+    problem_spec: str | None = None,
 ) -> str:
-    return f"""\
+    prompt = f"""\
 You are the orchestrator of one in-silico protein design cycle for DYB Pro, a pre-wetlab design
 platform. You plan the cycle and fan out to specialized child agents. You do not modify any code.
 
@@ -66,6 +67,9 @@ Target a wet-lab shortlist of about {shortlist_size} candidates.
 
 Respond only with structured output matching the provided schema.
 """
+    if problem_spec is not None:
+        prompt += f"\n# Machine-checkable problem specification\n{problem_spec}\n"
+    return prompt
 
 
 def child_prompt(
@@ -79,10 +83,11 @@ def child_prompt(
     history: str,
     focus_regions: list[int],
     must_avoid: list[str],
+    problem_spec: str | None = None,
 ) -> str:
     focus = ", ".join(str(r) for r in focus_regions) or "none specified"
     avoid = "; ".join(must_avoid) or "nothing specified beyond the exclusion list"
-    return f"""\
+    prompt = f"""\
 You are the DYB Pro **{role}** agent for one in-silico protein design cycle. Work only on your
 assigned task. Do not modify any code repository.
 
@@ -122,6 +127,9 @@ sequence:
 
 Respond only with structured output matching the provided schema.
 """
+    if problem_spec is not None:
+        prompt += f"\n# Machine-checkable problem specification\n{problem_spec}\n"
+    return prompt
 
 
 def ranking_prompt(
