@@ -1,8 +1,15 @@
 """Developability: stability, solubility, aggregation, immunogenicity, liabilities, filters.
 
-These are independent implementations of published heuristics (see CITATIONS.md). They are
-deliberately transparent and deterministic: each returns the value, the method name and the
-inputs that drove it, so a scientist can audit "why this score".
+These are independent implementations of published heuristics (see CITATIONS.md for DOIs,
+applicability and published error magnitudes). They are deliberately transparent and
+deterministic: each returns the value, the method name and the inputs that drove it, so a
+scientist can audit "why this score".
+
+None of the scores in this module is calibrated against experiment. The published methods supply
+the *ingredients* (which properties matter, in which direction); the window sizes, cut-offs and
+weights here were chosen by hand, so every value is in arbitrary units and is only meaningful when
+comparing designs of the same protein. Where a calibrated alternative exists it is named in the
+docstring so the limitation is actionable.
 """
 
 from __future__ import annotations
@@ -16,6 +23,10 @@ from app.toolkit.structure import Structure, relative_exposure
 
 # Liability motifs (regexes on the protein sequence). Names describe what the regex actually
 # matches -- a motif hit is a site worth checking, not evidence that the modification occurs.
+# Sequon definition: Gavel & von Heijne 1990 (doi:10.1093/protein/3.5.433); Asn deamidation
+# context: Robinson & Robinson 2001 (doi:10.1073/pnas.98.3.944), 306 measured asparaginyl
+# sequences at pH 7.4 / 37 C. Measured rates span orders of magnitude with context and
+# conformation (doi:10.3390/ijms21197035), so no rate is implied by a hit.
 LIABILITY_MOTIFS = {
     "n_glycosylation_sequon": r"N[^P][ST]",
     "deamidation_NG_NS": r"N[GS]",
@@ -55,8 +66,16 @@ def aggregation_propensity(seq: str, window: int = 7) -> Metric:
     """Hydrophobic-patch scan: fraction of windows whose mean hydropathy exceeds +1.5.
 
     Follows the aggregation-prone-region logic of window-based predictors (Tartaglia &
-    Vendruscolo, 2008): contiguous apolar stretches with low net charge drive aggregation. It is
-    a sequence-only flag for where to look, not a predicted aggregation rate or % monomer.
+    Vendruscolo 2008, Zyggregator, doi:10.1039/b706784b): contiguous apolar stretches with low net
+    charge drive aggregation. It is a sequence-only flag for where to look, not a predicted
+    aggregation rate or % monomer.
+
+    Applicability and error: the *direction* is well supported, the *numbers are not*. The
+    7-residue window, the +1.5 mean-hydropathy cut-off and the |q| <= 1 charge condition are
+    hand-chosen and have no published calibration; the returned fraction has no error bar because
+    there is no measured quantity to compare it with. For a predictor trained on experimentally
+    evaluated hexapeptides and benchmarked independently, use AggreProt (doi:10.1093/nar/gkae420);
+    for solubility change on mutation, CamSol (doi:10.1016/j.jmb.2014.09.026).
     """
     seq = seqlib.clean_sequence(seq)
     if len(seq) < window:
@@ -87,9 +106,15 @@ def aggregation_propensity(seq: str, window: int = 7) -> Metric:
 def solubility(seq: str) -> Metric:
     """Intrinsic solubility index from charge density, hydropathy and aggregation load.
 
-    Higher = expected to be more soluble. CamSol-inspired in its ingredients only: the weights
-    are hand-chosen, not fitted, so the value is in arbitrary units and cannot be read as a
-    predicted mg/mL or as CamSol's score.
+    Higher = expected to be more soluble. CamSol-inspired in its ingredients only
+    (doi:10.1016/j.jmb.2014.09.026): the weights are hand-chosen, not fitted, so the value is in
+    arbitrary units and cannot be read as a predicted mg/mL or as CamSol's score.
+
+    Applicability and error: uncalibrated, with no published error magnitude. For context on the
+    ceiling of this family, the trained sequence-only predictor SoluProt reaches 58.5% accuracy and
+    AUC 0.62 on its independent test set (doi:10.1093/bioinformatics/btaa1102) - even a fitted
+    model barely separates soluble from insoluble, so an unfitted composite such as this one must
+    only be used to rank variants of the same protein.
     """
     seq = seqlib.clean_sequence(seq)
     charge = abs(seqlib.net_charge(seq)) / max(1, len(seq)) * 100.0
@@ -111,6 +136,12 @@ def immunogenicity(seq: str) -> Metric:
     This is an allele-agnostic motif count, not a T-cell epitope prediction: it has no allele
     coverage, no binding affinity and no HLA frequency weighting. Use it to compare designs of
     the same protein, never to claim a protein is (non-)immunogenic.
+
+    Applicability and error: the P1/P4/P6/P9 anchor convention comes from the MHC class II binding
+    literature, but this count has no empirical calibration and no reported sensitivity or
+    specificity - there is nothing to report, because it was never benchmarked. An allele-aware
+    predictor trained on binding-affinity and eluted-ligand data (NetMHCIIpan-4.0,
+    doi:10.1093/nar/gkaa379) is required before any immunogenicity claim leaves the platform.
     """
     seq = seqlib.clean_sequence(seq)
     anchors_p1 = set("FWYLIVM")
@@ -138,7 +169,9 @@ def immunogenicity(seq: str) -> Metric:
 
 
 # Weights of the per-residue terms of the destabilization score. They are shape parameters of a
-# ranking heuristic, not fitted free-energy coefficients.
+# ranking heuristic, not fitted free-energy coefficients: the term decomposition follows empirical
+# ddG estimators (Guerois, Nielsen & Serrano 2002, doi:10.1016/s0022-2836(02)00442-4) but none of
+# these numbers is theirs, and none was fitted here.
 DDG_WEIGHTS = {
     "packing": 0.9,  # buried volume increase -> strain; decrease -> relief (signed)
     "burial_polarity": 0.35,  # losing apolar character in the core
@@ -162,7 +195,15 @@ def ddg_proxy(
 
     The value is in arbitrary units and is **not** calibrated against experimental ΔΔG: use it to
     order candidates, never to predict a ΔΔG or a Tm shift. Volume and helix propensities follow
-    the ingredients of empirical ΔΔG estimators (Guerois 2002) without their fitted weights.
+    the ingredients of empirical ΔΔG estimators (Guerois, Nielsen & Serrano 2002,
+    doi:10.1016/s0022-2836(02)00442-4, tested on 1088 point mutants) without their fitted weights.
+
+    Applicability and error: single point mutations in folded globular domains, additive across
+    sites (epistasis is not modelled). No error magnitude can be quoted for this score because it
+    has never been benchmarked; for scale, *fitted* predictors of this class reach only
+    r = 0.26-0.59 against experiment where experimental replicates reach r = 0.86
+    (doi:10.1093/protein/gzp030) - that benchmark is what ``skill.physics`` publishes as the
+    uncertainty when it converts this score onto a Tm scale.
     """
     wt_seq = seqlib.clean_sequence(wt_seq)
     exposure = relative_exposure(structure) if structure is not None else None
@@ -261,6 +302,9 @@ def profile(seq: str, structure: Structure | None = None, mutations: list[dict] 
 
 # --------------------------------------------------------------------------- hard filters
 
+# Screening thresholds. Every number below is a *project policy* gate for triage, not a published
+# cut-off: they are tuned so that one bad feature passes and a stack of them does not, and they are
+# overridable per campaign. See SKILLS/drug_discovery.md for the evidence table.
 DEFAULT_FILTERS = {
     "max_instability_index": 45.0,
     "min_solubility": -0.5,
@@ -299,7 +343,9 @@ def apply_filters(prof: dict, config: dict | None = None) -> dict:
         desc["instability_index"] <= cfg["max_instability_index"],
         desc["instability_index"],
         cfg["max_instability_index"],
-        "Guruprasad instability index above 40 predicts a short in-vivo half-life",
+        f"Guruprasad dipeptide instability index above {cfg['max_instability_index']} suggests a "
+        "short in-vivo half-life. Policy gate: the commonly quoted value of 40 is ExPASy ProtParam "
+        "convention and the source paper (doi:10.1093/protein/4.2.155) reports no accuracy for it",
     )
     add(
         "solubility",
