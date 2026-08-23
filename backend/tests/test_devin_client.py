@@ -165,3 +165,15 @@ def test_provider_resolution_never_pretends_to_be_devin():
     strict = Settings(devin_api_key=None, devin_org_id=None, allow_local_simulation=False)
     with pytest.raises(ProviderUnavailable):
         resolve_provider(strict)
+
+def test_health_reports_the_flavor_actually_in_use():
+    """A personal key is demoted by the health probe, so the badge must read v1, not v3."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/v3/"):
+            return httpx.Response(403, text="forbidden")
+        return httpx.Response(200, json={"sessions": []})
+
+    client = _client(handler, devin_api_key="cog_personal_key")
+    assert client.health() == {"ok": True, "flavor": "v1", "org_id": "org-123"}
+    assert client.api_flavor() == "v1"
