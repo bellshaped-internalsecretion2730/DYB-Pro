@@ -33,8 +33,8 @@ describe("left zone — ask & agent control", () => {
   it("keeps the inline prompt, run controls and uploads", () => {
     renderPane();
     expect(screen.getByLabelText("research brief")).toHaveValue("Improve GB1 thermal stability");
-    expect(screen.getByRole("button", { name: "cycle running…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "load demo project" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cycle running…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Load demo project" })).toBeEnabled();
     expect(screen.getByLabelText("upload sequences or structures")).toBeInTheDocument();
     expect(screen.getByLabelText("project")).toHaveValue(project.id);
   });
@@ -42,9 +42,9 @@ describe("left zone — ask & agent control", () => {
   it("renders the orchestrator plan, history and only real run controls", () => {
     renderPane();
     expect(screen.getByText("sequence")).toBeInTheDocument();
-    expect(screen.getByText(/round 3 · awaiting_agents/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "cancel run" })).toBeEnabled();
-    ["pause", "resume", "redirect", "spawn"].forEach((c) => {
+    expect(screen.getByText(/Round 3 · awaiting_agents/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel run" })).toBeEnabled();
+    ["Pause", "Resume", "Redirect", "Spawn"].forEach((c) => {
       expect(screen.getByRole("button", { name: c })).toBeDisabled();
     });
   });
@@ -55,11 +55,11 @@ describe("right zone — pixel agent swarm", () => {
     render(<AgentSwarm cycle={cycle} agents={agents} />);
     expect(screen.getByTestId("agent-swarm")).toBeInTheDocument();
     expect(screen.getAllByTestId("agent-card")).toHaveLength(4);
-    expect(screen.getByText("orchestrator", { selector: ".label" })).toBeInTheDocument();
-    expect(screen.getByText("wetlab planner")).toBeInTheDocument();
+    expect(screen.getByText("Orchestrator", { selector: ".label" })).toBeInTheDocument();
+    expect(screen.getByText("Wetlab planner")).toBeInTheDocument();
     expect(screen.getByText("1 active · 4 runs")).toBeInTheDocument();
     expect(screen.getByText("toolkit rejected proposal")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /devin session/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Devin session/ })).toHaveAttribute(
       "href",
       "https://app.devin.ai/sessions/lit",
     );
@@ -73,9 +73,9 @@ describe("right zone — pixel agent swarm", () => {
   });
 
   it("maps every backend status to a state without inventing activity", () => {
-    expect(agentState("running")).toMatchObject({ label: "thinking", active: true });
-    expect(agentState("finished")).toMatchObject({ label: "done", active: false });
-    expect(agentState("pending")).toMatchObject({ label: "queued", active: false });
+    expect(agentState("running")).toMatchObject({ label: "Thinking", active: true });
+    expect(agentState("finished")).toMatchObject({ label: "Done", active: false });
+    expect(agentState("pending")).toMatchObject({ label: "Queued", active: false });
     expect(agentState("failed").active).toBe(false);
   });
 
@@ -100,8 +100,8 @@ describe("center zone — protein viewer and fold strip", () => {
     expect(screen.getByText(/vs GB1-v8/)).toBeInTheDocument();
     expect(screen.getByText("T2I")).toBeInTheDocument();
     expect(screen.getByTestId("sequence-track").textContent).toBe("MTYKLILNG");
-    expect(screen.getByText(/composite 0.842/)).toBeInTheDocument();
-    ["zoom in", "zoom out", "reset", "labels", "exit compare"].forEach((c) =>
+    expect(screen.getByText(/Composite 0.842/)).toBeInTheDocument();
+    ["Zoom in", "Zoom out", "Reset", "Labels", "Exit compare"].forEach((c) =>
       expect(screen.getByRole("button", { name: c })).toBeInTheDocument(),
     );
   });

@@ -52,7 +52,7 @@ export default function CommandPalette({
           ref={inputRef}
           type="text"
           value={query}
-          placeholder="run a command…"
+          placeholder="Run a command…"
           aria-label="command"
           onChange={(e) => {
             setQuery(e.target.value);
@@ -96,7 +96,7 @@ export default function CommandPalette({
           ))}
           {matches.length === 0 && (
             <p className="hint" style={{ padding: "10px 12px", margin: 0 }}>
-              no matching command
+              No matching command
             </p>
           )}
         </div>

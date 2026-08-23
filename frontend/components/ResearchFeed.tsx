@@ -20,7 +20,7 @@ export default function ResearchFeed({
           aria-selected={tab === "events"}
           onClick={() => setTab("events")}
         >
-          research events ({events.length})
+          Research events ({events.length})
         </button>
         <button
           type="button"
@@ -28,7 +28,7 @@ export default function ResearchFeed({
           aria-selected={tab === "papers"}
           onClick={() => setTab("papers")}
         >
-          cached papers ({papers.length})
+          Cached papers ({papers.length})
         </button>
       </div>
       {tab === "events" ? (
@@ -36,7 +36,7 @@ export default function ResearchFeed({
           {events.map((e) => (
             <div className="event" key={e.id}>
               <div className="kind">
-                <span className="tip" data-tip={`triggered by ${e.trigger} · role ${e.role}`} tabIndex={0}>
+                <span className="tip" data-tip={`Triggered by ${e.trigger} · role ${e.role}`} tabIndex={0}>
                   #{e.sequence_no} {e.kind}
                 </span>
               </div>
@@ -48,14 +48,14 @@ export default function ResearchFeed({
                   <>
                     {" · "}
                     <a href={e.devin_session_url} target="_blank" rel="noreferrer">
-                      devin session
+                      Devin session
                     </a>
                   </>
                 ) : null}
               </div>
             </div>
           ))}
-          {events.length === 0 && <p className="muted">the daemon has not written an event yet</p>}
+          {events.length === 0 && <p className="muted">The daemon has not written an event yet</p>}
         </div>
       ) : (
         <div className="timeline">
@@ -91,7 +91,7 @@ export default function ResearchFeed({
             </div>
           ))}
           {papers.length === 0 && (
-            <p className="muted">no cached papers yet — run a research pass</p>
+            <p className="muted">No cached papers yet — run a research pass</p>
           )}
         </div>
       )}

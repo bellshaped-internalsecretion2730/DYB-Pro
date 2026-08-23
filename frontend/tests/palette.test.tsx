@@ -4,9 +4,9 @@ import CommandPalette from "@/components/CommandPalette";
 
 describe("command palette", () => {
   const commands = [
-    { id: "run", label: "run design cycle", hint: "⌘↵", run: vi.fn() },
-    { id: "cancel", label: "cancel running cycle", disabled: true, run: vi.fn() },
-    { id: "seed", label: "load demo project", run: vi.fn() },
+    { id: "run", label: "Run design cycle", hint: "⌘↵", run: vi.fn() },
+    { id: "cancel", label: "Cancel running cycle", disabled: true, run: vi.fn() },
+    { id: "seed", label: "Load demo project", run: vi.fn() },
   ];
 
   it("hides disabled commands and runs the selected one", () => {

@@ -41,7 +41,7 @@ export default function WetlabLoop({
   const [paste, setPaste] = useState("");
   const [notes, setNotes] = useState("");
 
-  if (!commit) return <p className="muted">select a version to run the wet-lab loop</p>;
+  if (!commit) return <p className="muted">Select a version to run the wet-lab loop</p>;
 
   const latest = results[results.length - 1] || null;
 
@@ -53,16 +53,16 @@ export default function WetlabLoop({
           data-tip="Predict, propose the cheapest informative pack, record results (simulator or real); the residuals recalibrate the next proposal. Every metric comes from a tested skill."
           tabIndex={0}
         >
-          predicted risk
+          Predicted risk
         </span>
       </h3>
       {risk ? (
         <table>
           <thead>
             <tr>
-              <th>risk</th>
-              <th>level</th>
-              <th>mitigation</th>
+              <th>Risk</th>
+              <th>Level</th>
+              <th>Mitigation</th>
             </tr>
           </thead>
           <tbody>
@@ -84,14 +84,14 @@ export default function WetlabLoop({
             {risk.risk.risks.length === 0 && (
               <tr>
                 <td colSpan={3} className="muted">
-                  no flagged liabilities for this version
+                  No flagged liabilities for this version
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       ) : (
-        <p className="muted">loading predictions…</p>
+        <p className="muted">Loading predictions…</p>
       )}
 
       <div className="row" style={{ marginTop: 10 }}>
@@ -119,7 +119,7 @@ export default function WetlabLoop({
           onClick={() => onPlan(host, maxAssays)}
           disabled={busy === "plan"}
         >
-          {busy === "plan" ? "planning…" : "propose wet-lab pack"}
+          {busy === "plan" ? "Planning…" : "Propose wet-lab pack"}
         </button>
       </div>
 
@@ -127,33 +127,33 @@ export default function WetlabLoop({
         <div style={{ marginTop: 12 }}>
           <h3 className="subhead">
             <span className="tip" data-tip={plan.rationale} tabIndex={0}>
-              proposed pack
+              Proposed pack
             </span>
           </h3>
           <div className="kpis">
             <div className="kpi">
-              <span className="k">cost</span>
+              <span className="k">Cost</span>
               <span className="v">${fmt(plan.total_cost_usd)}</span>
             </div>
             <div className="kpi">
-              <span className="k">info/$</span>
+              <span className="k">Info/$</span>
               <span className="v">{fmt(plan.information_per_usd, 4)}</span>
             </div>
             <div className="kpi">
-              <span className="k">assays</span>
+              <span className="k">Assays</span>
               <span className="v">{plan.assays.length}</span>
             </div>
             <div className="kpi">
-              <span className="k">days</span>
+              <span className="k">Days</span>
               <span className="v">{Math.max(0, ...plan.assays.map((a) => a.days))}</span>
             </div>
           </div>
           <table>
             <thead>
               <tr>
-                <th>construct</th>
-                <th>vector / host</th>
-                <th>build route</th>
+                <th>Construct</th>
+                <th>Vector / host</th>
+                <th>Build route</th>
               </tr>
             </thead>
             <tbody>
@@ -176,14 +176,14 @@ export default function WetlabLoop({
               ))}
             </tbody>
           </table>
-          <h3 className="subhead">assay spend</h3>
+          <h3 className="subhead">Assay spend</h3>
           <MiniBars
             bars={plan.assays.map((a) => ({
               key: a.assay,
               name: a.assay,
               value: a.cost_usd,
               readout: `$${fmt(a.cost_usd)} · ${a.days}d`,
-              tip: `measures ${a.measures.join(", ")} · $${fmt(a.cost_usd)} over ${a.days} day(s)`,
+              tip: `Measures ${a.measures.join(", ")} · $${fmt(a.cost_usd)} over ${a.days} day(s)`,
             }))}
           />
           <div className="row" style={{ marginTop: 10 }}>
@@ -200,15 +200,15 @@ export default function WetlabLoop({
               onClick={() => onSimulate(seed)}
               disabled={busy === "simulate"}
             >
-              {busy === "simulate" ? "running simulator…" : "register simulated results"}
+              {busy === "simulate" ? "Running simulator…" : "Register simulated results"}
             </button>
-            <span className="badge sim">simulator, not a real lab</span>
+            <span className="badge sim">Simulator, not a real lab</span>
           </div>
         </div>
       )}
 
       <div style={{ marginTop: 12 }}>
-        <h3 className="subhead">paste real results (CSV or JSON)</h3>
+        <h3 className="subhead">Paste real results (CSV or JSON)</h3>
         <textarea
           style={{ minHeight: 70 }}
           placeholder={"metric,value,unit\nTm,58.4,C\nyield,12.1,mg/L\nexpressed,1,"}
@@ -218,7 +218,7 @@ export default function WetlabLoop({
         <div className="row" style={{ marginTop: 8 }}>
           <input
             type="text"
-            placeholder="notes (operator, buffer, date)"
+            placeholder="Notes (operator, buffer, date)"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             style={{ maxWidth: 300 }}
@@ -229,7 +229,7 @@ export default function WetlabLoop({
             onClick={() => onSubmit(paste, notes).then(() => setPaste(""))}
             disabled={!paste.trim() || busy === "ingest"}
           >
-            {busy === "ingest" ? "ingesting…" : "register real results"}
+            {busy === "ingest" ? "Ingesting…" : "Register real results"}
           </button>
         </div>
         {unknownMetrics.length > 0 && (
@@ -248,7 +248,7 @@ export default function WetlabLoop({
               }
               tabIndex={0}
             >
-              measured vs predicted
+              Measured vs predicted
             </span>{" "}
             <span className={`pill ${latest.source === "simulator" ? "" : "ok"}`}>{latest.source}</span>
           </h3>

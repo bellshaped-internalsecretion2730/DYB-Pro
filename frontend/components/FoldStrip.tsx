@@ -28,7 +28,7 @@ export default function FoldStrip({
   return (
     <section className="fold-strip" data-testid="fold-strip">
       <div className="pane-header" style={{ position: "static" }}>
-        <span className="label">folded versions</span>
+        <span className="label">Folded versions</span>
         <span className="meta">
           {nodes.length} commits · click to load · drag one onto another to compare
         </span>
@@ -36,7 +36,7 @@ export default function FoldStrip({
       <div className="thumbs">
         {nodes.length === 0 && (
           <p className="hint" style={{ margin: 0 }}>
-            versions appear here as designs are committed
+            Versions appear here as designs are committed
           </p>
         )}
         {nodes.map((n) => (

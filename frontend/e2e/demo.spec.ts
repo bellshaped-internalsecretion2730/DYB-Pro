@@ -69,41 +69,41 @@ test.describe("demo path", () => {
 
   test("every control on the 90-second path works", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("tab", { name: "research lab" }).click();
+    await page.getByRole("tab", { name: "Research lab" }).click();
 
     // pick the campaign: the demo project auto-selects and its history is summarised
     const summary = page.getByTestId("campaign-summary");
     await expect(summary).toContainText(/3 versions/, { timeout: 60_000 });
     await expect(summary).toContainText(/papers/);
     const daemonPane = page.locator("section", { has: page.getByTestId("daemon-tick") });
-    await expect(daemonPane).toContainText(/daemon:/);
+    await expect(daemonPane).toContainText(/Daemon:/);
     await expect(daemonPane).toContainText(/local-simulation|devin/);
 
     // the daemon reacts to a label
     await page.locator(".seqgrid button").nth(11).click();
-    await page.getByPlaceholder(/label name/).fill("e2e liability probe");
+    await page.getByPlaceholder(/Label name/).fill("e2e liability probe");
     await page.getByTestId("label-create").click();
     await expect(daemonPane).toContainText(/label_changed/, { timeout: 30_000 });
 
     // ...and running the due work clears it, writing new research events
     await page.getByTestId("daemon-refresh").click();
     await page.getByTestId("daemon-tick").click();
-    await expect(page.getByTestId("daemon-tick")).toHaveText(/run due work now/, {
+    await expect(page.getByTestId("daemon-tick")).toHaveText(/Run due work now/, {
       timeout: 240_000,
     });
-    const feed = page.locator("section", { has: page.getByRole("button", { name: /cached papers/ }) });
-    await expect(feed.getByRole("button", { name: /research events \([1-9]/ })).toBeVisible();
+    const feed = page.locator("section", { has: page.getByRole("button", { name: /Cached papers/ }) });
+    await expect(feed.getByRole("button", { name: /Research events \([1-9]/ })).toBeVisible();
 
     // the immutable paper cache is browsable
-    await feed.getByRole("button", { name: /cached papers \([1-9]/ }).click();
+    await feed.getByRole("button", { name: /Cached papers \([1-9]/ }).click();
     await expect(feed.locator(".event").first()).toBeVisible();
 
     // wet-lab loop: propose a pack, then register a simulated measurement on this version
     const wetlab = page.locator("section", { has: page.getByTestId("wetlab-plan") });
     await page.getByTestId("wetlab-plan").click();
-    await expect(wetlab.getByText(/info\/\$/)).toBeVisible({ timeout: 180_000 });
+    await expect(wetlab.getByText(/Info\/\$/)).toBeVisible({ timeout: 180_000 });
     await page.getByTestId("wetlab-simulate").click();
-    await expect(wetlab.getByText(/measured vs predicted/)).toBeVisible({ timeout: 180_000 });
+    await expect(wetlab.getByText(/Measured vs predicted/)).toBeVisible({ timeout: 180_000 });
     await expect(wetlab.getByText("simulator", { exact: true })).toBeVisible();
 
     // and the campaign explains itself: drift, then the next-version proposal
@@ -111,8 +111,8 @@ test.describe("demo path", () => {
     await expect(learned).toContainText(/rmse/);
     await expect(learned).toContainText(/shrinking|not yet/);
     await page.getByTestId("proposal-refresh").click();
-    await expect(learned).toContainText(/target /, { timeout: 180_000 });
-    await expect(learned).toContainText(/mutations:/);
+    await expect(learned).toContainText(/Target /, { timeout: 180_000 });
+    await expect(learned).toContainText(/Mutations:/);
 
     // no control on the path left the app in an error state
     await expect(page.locator(".err")).toHaveCount(0);
