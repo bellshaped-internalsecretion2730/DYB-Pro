@@ -39,6 +39,16 @@ def test_seed_campaign_builds_a_measured_history_and_is_idempotent(client, proje
     assert digest["result_count"] >= 3
     assert overview.json()["learned"]["headline"]
 
+    learned = client.get(
+        f"/api/lab/projects/{project_id}/research/learned", headers=headers("viewer")
+    ).json()
+    first, latest = learned["versions"][0]["label"], learned["versions"][-1]["label"]
+    # the pane's "v1 -> latest" insight: the uploaded wild type has no in-silico scores, so the
+    # comparison has to fall back to what the lab measured on both ends of the path
+    assert any(first in lesson and latest in lesson for lesson in learned["lessons"]), learned[
+        "lessons"
+    ]
+
     papers = client.get(
         f"/api/lab/projects/{project_id}/research/papers", headers=headers("viewer")
     )
