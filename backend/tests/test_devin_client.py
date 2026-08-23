@@ -131,7 +131,7 @@ def test_session_state_terminality_and_structured_output():
     assert failed.is_terminal and failed.failed
 
 
-def test_cancel_messages_then_archives_the_session():
+def test_cancel_messages_then_terminates_the_session():
     calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -140,8 +140,8 @@ def test_cancel_messages_then_archives_the_session():
 
     _client(handler).cancel_session("devin-abc", "user cancelled")
     assert calls == [
-        "/v3/enterprise/sessions/devin-abc/messages",
-        "/v3/organizations/org-123/sessions/devin-abc/archive",
+        "/v3/organizations/org-123/sessions/devin-abc/messages",
+        "/v3/organizations/org-123/sessions/devin-abc",
     ]
 
 

@@ -9,7 +9,6 @@ import FoldStrip from "@/components/FoldStrip";
 import IconRail, { RAIL_SECTIONS, type RailSection } from "@/components/IconRail";
 import MetricStrip from "@/components/MetricStrip";
 import ProteinViewer from "@/components/ProteinViewer";
-import ProviderBadge from "@/components/ProviderBadge";
 import ResearchPane from "@/components/ResearchPane";
 import ResearchWorkspace from "@/components/ResearchWorkspace";
 import SequenceLoader from "@/components/SequenceLoader";
@@ -28,7 +27,6 @@ import {
   type Observation,
   type Project,
   type ProjectResearch,
-  type Provider,
   type Shortlist,
 } from "@/lib/api";
 
@@ -45,7 +43,6 @@ const CENTER_TABS: [CenterTab, string, string][] = [
 ];
 
 export default function Workspace() {
-  const [provider, setProvider] = useState<Provider | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [brief, setBrief] = useState("");
@@ -80,7 +77,6 @@ export default function Workspace() {
 
   useEffect(() => {
     setKeyInput(apiKey());
-    api.get<Provider>("/providers").then(setProvider).catch(fail);
     loadProjects()
       .then((rows) => {
         const demo = rows.find((p) => p.is_demo) || rows[0];
@@ -373,10 +369,6 @@ export default function Workspace() {
         <div className="brand" title="DYB Pro protein design workspace">
           <b>DYB</b><span> PRO</span>
         </div>
-        <ProviderBadge provider={provider} />
-        {provider?.openai_configured && (
-          <span className="badge" title="OpenAI powers the research chat and analysis.">AI</span>
-        )}
         <div className="grow" />
         <button
           className="ghost tip"
@@ -474,7 +466,7 @@ export default function Workspace() {
               minWidth: 0,
             }}
           >
-            <div className="pane-header" role="tablist" aria-label="center surface">
+            <div className="pane-header center-nav" role="tablist" aria-label="center surface">
               <div className="row">
                 {CENTER_TABS.map(([id, label, hint]) => (
                   <button

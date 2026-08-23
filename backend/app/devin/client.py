@@ -1,13 +1,13 @@
 """Real Devin API client.
 
 Supports both API flavors:
-  * ``v3`` — organization-scoped enterprise endpoints (``/v3/organizations/{org_id}/...``), used by
-    ``cog_`` service-account keys. This is the default.
+  * ``v3`` — organization-scoped endpoints (``/v3/organizations/{org_id}/...``), used by
+    ``cog_`` service-user keys. This is the default.
   * ``v1`` — personal-key endpoints (``/v1/sessions``).
 
 Everything DYB Pro needs is here: create sessions with playbooks/tags/ACU limits/structured
 output schemas, poll status + structured output + ACU consumption, send follow-up messages, list
-child sessions, cancel (archive) sessions, and reconcile playbooks.
+child sessions, cancel sessions, and reconcile playbooks.
 """
 
 from __future__ import annotations
@@ -130,10 +130,10 @@ class DevinClient:
             return "/v1/sessions"
         if path.startswith(f"{org_prefix}/sessions/"):
             rest = path[len(f"{org_prefix}/sessions/") :]
+            if rest.endswith("/messages"):
+                session_id = rest[: -len("/messages")]
+                return f"/v1/sessions/{session_id}/message"
             return f"/v1/sessions/{rest}" if "/" not in rest else None
-        if path.startswith("/v3/enterprise/sessions/") and path.endswith("/messages"):
-            session_id = path[len("/v3/enterprise/sessions/") : -len("/messages")]
-            return f"/v1/sessions/{session_id}/message"
         return None  # playbooks, schedules and org knowledge are v3-only
 
     def _flavor(self) -> str:
@@ -238,9 +238,8 @@ class DevinClient:
         if self._flavor() == "v3":
             return self._request(
                 "POST",
-                f"/v3/enterprise/sessions/{session_id}/messages",
+                f"/v3/organizations/{self.org_id}/sessions/{session_id}/messages",
                 json={"message": message},
-                params={"org_id": self.org_id} if self.org_id else None,
             )
         return self._request("POST", f"/v1/sessions/{session_id}/message", json={"message": message})
 
@@ -251,14 +250,12 @@ class DevinClient:
         except DevinAPIError as exc:  # already suspended/finished is fine
             logger.info("cancel message to %s failed (%s), archiving anyway", session_id, exc)
         if self._flavor() == "v3":
-            return self._request(
-                "POST", f"/v3/organizations/{self.org_id}/sessions/{session_id}/archive"
-            )
-        return {"detail": "archive is only supported on the v3 API"}
+            return self._request("DELETE", f"/v3/organizations/{self.org_id}/sessions/{session_id}")
+        return {"detail": "session termination is only supported on the v3 API"}
 
     def list_sessions(self, tags: list[str] | None = None, limit: int = 50) -> list[dict]:
         if self._flavor() == "v3":
-            params: dict[str, Any] = {"limit": limit}
+            params: dict[str, Any] = {"first": limit}
             if tags:
                 params["tags"] = tags
             data = self._request(
@@ -347,7 +344,7 @@ class DevinClient:
             return self._request(
                 "POST",
                 f"/v3/organizations/{self.org_id}/knowledge/notes",
-                json={"name": name, "body": body, "trigger": trigger},
+                json={"name": name, "body": body, "trigger_description": trigger},
             )
         return self._request(
             "POST",
@@ -371,7 +368,7 @@ class DevinClient:
     def health(self) -> dict:
         """Cheap authenticated call used by /healthz and the UI provider badge."""
         if self._flavor() == "v3":
-            self._request("GET", f"/v3/organizations/{self.org_id}/sessions", params={"limit": 1})
+            self._request("GET", f"/v3/organizations/{self.org_id}/sessions", params={"first": 1})
         else:
             self._request("GET", "/v1/sessions", params={"limit": 1})
         return {"ok": True, "flavor": self.flavor, "org_id": self.org_id}

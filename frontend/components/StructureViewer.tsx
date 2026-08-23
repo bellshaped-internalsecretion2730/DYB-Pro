@@ -515,7 +515,7 @@ export default function StructureViewer({
             }}
           />
           <button className="tab tip" type="button" data-tip="select and orbit to the range · key F" onClick={focusRange}>
-            focus
+            Focus
           </button>
           <input
             className="mini-input"
@@ -533,7 +533,7 @@ export default function StructureViewer({
             data-tip="Cα–Cα distance in the model geometry"
             onClick={measurePair}
           >
-            measure
+            Measure
           </button>
           <button
             className="tab tip"
