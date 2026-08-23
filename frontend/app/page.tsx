@@ -7,10 +7,13 @@ import AskPane from "@/components/AskPane";
 import CommandPalette, { type Command } from "@/components/CommandPalette";
 import DatabaseSearch from "@/components/DatabaseSearch";
 import FoldStrip from "@/components/FoldStrip";
+import IconRail, { RAIL_SECTIONS, type RailSection } from "@/components/IconRail";
+import MetricStrip from "@/components/MetricStrip";
 import ProteinViewer from "@/components/ProteinViewer";
 import ProviderBadge from "@/components/ProviderBadge";
 import ResearchPane from "@/components/ResearchPane";
 import ResearchWorkspace from "@/components/ResearchWorkspace";
+import SequenceLoader from "@/components/SequenceLoader";
 import ShortlistPanel from "@/components/ShortlistPanel";
 import StructureViewer from "@/components/StructureViewer";
 import VersionDag from "@/components/VersionDag";
@@ -30,15 +33,16 @@ import {
 } from "@/lib/api";
 
 const TERMINAL = ["committed", "partial", "failed", "cancelled"];
-type CenterTab =
-  | "structure"
-  | "lineage"
-  | "shortlist"
-  | "research"
-  | "log"
-  | "3d-structure"
-  | "databases"
-  | "lab";
+type CenterTab = "structure" | "lineage" | "shortlist" | "research" | "lab" | "data";
+
+const CENTER_TABS: [CenterTab, string, string][] = [
+  ["structure", "structure", "the selected version in 3D, with its sequence and scores"],
+  ["lineage", "lineage", "every design as an immutable commit: parent, agent, prompt, citations"],
+  ["shortlist", "shortlist", "ranked wet-lab candidates for the attached cycle"],
+  ["research", "research", "the always-live research daemon and the append-only observation log"],
+  ["lab", "lab", "labels, evidence, wet-lab loop and what the campaign learned"],
+  ["data", "data", "public database search with the upstream source shown"],
+];
 
 export default function Workspace() {
   const [provider, setProvider] = useState<Provider | null>(null);
@@ -56,6 +60,10 @@ export default function Workspace() {
   const [error, setError] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [tab, setTab] = useState<CenterTab>("structure");
+  const [rail, setRail] = useState<RailSection>("ask");
+  const [view, setView] = useState<"3d" | "schematic">("3d");
+  const [pasted, setPasted] = useState<{ text: string; name: string } | null>(null);
+  const [marked, setMarked] = useState<number[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [compareId, setCompareId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -219,6 +227,37 @@ export default function Workspace() {
     }
   }
 
+  /**
+   * Hand-off uses the two autonomy entry points the API actually has: a design cycle for the
+   * current brief, and a research-daemon refresh anchored on the selected version.
+   */
+  async function handoff() {
+    if (!project) return;
+    setBusy("handoff");
+    setError(null);
+    setShortlist(null);
+    try {
+      const created = await api.post<Cycle>(`/projects/${project.id}/cycles`, {
+        brief: brief || project.goal,
+        branch: "main",
+      });
+      setCycles((rows) => [created, ...rows.filter((c) => c.id !== created.id)]);
+      await attachCycle(created);
+      const anchor = selectedId ? `?commit_id=${selectedId}` : "";
+      try {
+        await api.post(`/lab/projects/${project.id}/research/refresh${anchor}`);
+      } catch {
+        /* the lab daemon is optional; the cycle is the hand-off that matters */
+      }
+      await refreshProject(project.id);
+      await loadProjects();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function cancelCycle() {
     if (!cycle) return;
     try {
@@ -260,6 +299,13 @@ export default function Workspace() {
         setPaletteOpen((v) => !v);
       }
       if (e.key === "Escape") setPaletteOpen(false);
+      if (e.altKey && /^[1-9]$/.test(e.key)) {
+        const next = RAIL_SECTIONS[Number(e.key) - 1];
+        if (next) {
+          e.preventDefault();
+          setRail(next);
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -270,10 +316,14 @@ export default function Workspace() {
     { id: "cancel", label: "cancel running cycle", disabled: !running, run: cancelCycle },
     { id: "seed", label: "load demo project", run: seedDemo },
     { id: "upload", label: "upload sequence / structure", disabled: !project, run: () => fileRef.current?.click() },
-    { id: "tab-structure", label: "view protein viewer", run: () => setTab("structure") },
+    { id: "handoff", label: "hand off to the agent swarm", disabled: !project || running, run: handoff },
+    { id: "tab-structure", label: "view 3D structure", run: () => setTab("structure") },
     { id: "tab-lineage", label: "view version DAG", run: () => setTab("lineage") },
     { id: "tab-shortlist", label: "view wet-lab shortlist", run: () => setTab("shortlist") },
-    { id: "tab-log", label: "view observation log", run: () => setTab("log") },
+    { id: "tab-research", label: "view research daemon and log", run: () => setTab("research") },
+    { id: "view-3d", label: "show the 3D viewer", run: () => setView("3d") },
+    { id: "view-schematic", label: "show the 2D schematic", run: () => setView("schematic") },
+    { id: "clear-pasted", label: "unload pasted structure", disabled: !pasted, run: () => setPasted(null) },
     { id: "clear-compare", label: "exit version compare", disabled: !compareId, run: () => setCompareId(null) },
     {
       id: "refresh",
@@ -327,8 +377,13 @@ export default function Workspace() {
       )}
 
       <div className="workspace">
+        <IconRail active={rail} onSelect={setRail} />
+
         <aside className="pane left" aria-label="ask and agent control">
           <AskPane
+            section={rail}
+            selectedLabel={selected?.label ?? selected?.short_id ?? null}
+            onHandoff={handoff}
             projects={projects}
             project={project}
             cycles={cycles}
@@ -361,53 +416,97 @@ export default function Workspace() {
           >
             <div className="pane-header" role="tablist" aria-label="center surface">
               <div className="row">
-                {(
-                  [
-                    ["structure", "protein viewer"],
-                    ["lineage", "version DAG"],
-                    ["shortlist", "wet-lab shortlist"],
-                    ["research", "research daemon"],
-                    ["log", "observation log"],
-                    ["3d-structure", "3d structure"],
-                    ["databases", "databases"],
-                    ["lab", "research lab"],
-                  ] as [CenterTab, string][]
-                ).map(([id, label]) => (
+                {CENTER_TABS.map(([id, label, hint]) => (
                   <button
-                    className="tab"
+                    className="tab tip"
                     type="button"
                     role="tab"
                     key={id}
                     aria-selected={tab === id}
+                    data-tip={hint}
                     onClick={() => setTab(id)}
                   >
                     {label}
                   </button>
                 ))}
               </div>
-              <span className="meta">{project ? project.name : "no project"}</span>
+              <div className="row">
+                {tab === "structure" && (
+                  <div className="row" role="group" aria-label="viewer mode">
+                    {(["3d", "schematic"] as const).map((v) => (
+                      <button
+                        className="tab tip"
+                        type="button"
+                        key={v}
+                        aria-selected={view === v}
+                        data-tip={
+                          v === "3d"
+                            ? "coarse C\u03b1 coordinates rendered with Mol*"
+                            : "2D schematic of the backbone; works without WebGL"
+                        }
+                        onClick={() => setView(v)}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <SequenceLoader
+                  project={project}
+                  referenceSequence={sequence}
+                  referenceLabel={selected?.label ?? null}
+                  busy={busy !== null}
+                  onRenderStructure={(text, name) => {
+                    setPasted({ text, name });
+                    setView("3d");
+                    setTab("structure");
+                  }}
+                  onCommitFile={(file) => {
+                    const list = new DataTransfer();
+                    list.items.add(file);
+                    upload(list.files).catch(fail);
+                  }}
+                  onCreateTargetProject={(targetName, targetSequence) => {
+                    setBusy("project");
+                    api
+                      .post<Project>("/projects", {
+                        name: targetName,
+                        goal: brief,
+                        target_name: targetName,
+                        target_sequence: targetSequence,
+                      })
+                      .then(async (p) => {
+                        await loadProjects();
+                        await selectProject(p);
+                      })
+                      .catch(fail)
+                      .finally(() => setBusy(null));
+                  }}
+                  onCompare={setMarked}
+                />
+                <span className="meta">{project ? project.name : "no project"}</span>
+              </div>
             </div>
 
-            {tab === "structure" && (
-              <ProteinViewer
-                node={selected}
-                compareNode={compared}
-                sequence={sequence}
-                onClearCompare={() => setCompareId(null)}
-              />
-            )}
-
-            {tab === "3d-structure" && (
-              <div className="center-body">
-                <section className="panel">
-                  <h2>3D structure</h2>
-                  <p className="hint">
-                    Inspect the selected commit structure when an experimental PDB is available.
-                  </p>
-                  <StructureViewer commitId={selected?.id ?? project?.head_commit_id ?? null} />
-                </section>
-              </div>
-            )}
+            {tab === "structure" &&
+              (view === "3d" ? (
+                <StructureViewer
+                  commitId={selected?.id ?? project?.head_commit_id ?? null}
+                  compareCommitId={compared?.id ?? null}
+                  label={selected?.label ?? selected?.short_id ?? null}
+                  sequence={sequence}
+                  mutations={(selected?.mutations ?? []).filter((m): m is string => !!m)}
+                  pasted={pasted}
+                  marked={marked}
+                />
+              ) : (
+                <ProteinViewer
+                  node={selected}
+                  compareNode={compared}
+                  sequence={sequence}
+                  onClearCompare={() => setCompareId(null)}
+                />
+              ))}
 
             {tab === "lab" && (
               <div className="center-body lab">
@@ -415,7 +514,7 @@ export default function Workspace() {
               </div>
             )}
 
-            {tab === "databases" && (
+            {tab === "data" && (
               <div className="center-body">
                 <section className="panel">
                   <h2>Public database search</h2>
@@ -452,26 +551,25 @@ export default function Workspace() {
             {tab === "research" && (
               <div className="center-body">
                 <section className="panel">
-                  <h2>Research daemon</h2>
-                  <p className="hint">
-                    Always-live loop, separate from design cycles: it watches commits, uploads and
-                    measured results, reuses cached research, and re-estimates proxy-vs-measurement
-                    drift.
-                  </p>
+                  <h2
+                    className="tip"
+                    data-tip="always-live loop, separate from design cycles: it watches commits, uploads and measured results, reuses cached research and re-estimates proxy-vs-measurement drift"
+                  >
+                    Research daemon
+                  </h2>
                   <ResearchPane
                     research={research}
                     onTrigger={triggerResearch}
                     busy={busy === "research"}
                   />
                 </section>
-              </div>
-            )}
-
-            {tab === "log" && (
-              <div className="center-body">
                 <section className="panel">
-                  <h2>Observation log</h2>
-                  <p className="hint">Append-only memory the next cycle reads before proposing designs.</p>
+                  <h2
+                    className="tip"
+                    data-tip="append-only memory the next cycle reads before proposing designs"
+                  >
+                    Observation log
+                  </h2>
                   <div className="timeline">
                     {timeline.map((o) => (
                       <div className="event" key={o.id}>
@@ -488,16 +586,23 @@ export default function Workspace() {
             )}
           </div>
 
-          <FoldStrip
-            nodes={versions}
-            selectedId={selected?.id ?? null}
-            compareId={compareId}
-            onSelect={(n) => {
-              setSelectedId(n.id);
-              setTab("structure");
-            }}
-            onCompare={(n) => setCompareId(n.id)}
-          />
+          <div>
+            {tab === "structure" && (
+              <MetricStrip node={selected} compareNode={compared} versions={versions} />
+            )}
+            <FoldStrip
+              nodes={versions}
+              selectedId={selected?.id ?? null}
+              compareId={compareId}
+              onSelect={(n) => {
+                setSelectedId(n.id);
+                setPasted(null);
+                setMarked([]);
+                setTab("structure");
+              }}
+              onCompare={(n) => setCompareId(n.id)}
+            />
+          </div>
         </main>
 
         <aside className="pane right" aria-label="pixel agent swarm">

@@ -38,8 +38,22 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Same routing and auth as `request`, for endpoints that return text (PDB, FASTA, CSV). */
+async function requestText(path: string): Promise<string> {
+  const headers = new Headers();
+  const key = apiKey();
+  if (key) headers.set("X-API-Key", key);
+  const res = await fetch(`${API_BASE}${DIRECT_API_BASE ? `/api${path}` : path}`, {
+    headers,
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+  return res.text();
+}
+
 export const api = {
   get: <T,>(path: string) => request<T>(path),
+  text: (path: string) => requestText(path),
   post: <T,>(path: string, body?: unknown) =>
     request<T>(path, {
       method: "POST",
