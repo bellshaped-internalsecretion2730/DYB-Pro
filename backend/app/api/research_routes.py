@@ -415,9 +415,14 @@ def create_label(
 
 
 @router.get("/commits/{commit_id}/wetlab/risk", tags=["wetlab"])
-def wetlab_risk(commit_id: str, db: Session = Depends(get_db), user: User = viewer) -> dict:
+def wetlab_risk(
+    commit_id: str,
+    host: str = wetlab_loop.DEFAULT_HOST,
+    db: Session = Depends(get_db),
+    user: User = viewer,
+) -> dict:
     commit, project, rp = _commit_campaign(db, commit_id)
-    prediction = wetlab_loop.predict_metrics(db, rp, commit)
+    prediction = wetlab_loop.predict_metrics(db, rp, commit, host=host)
     return {
         "commit_id": commit.id,
         "predictions": prediction["predictions"],

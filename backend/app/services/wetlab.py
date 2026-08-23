@@ -120,15 +120,53 @@ def mutagenesis_primers(
     }
 
 
-def construct(sequence: str, label: str, vector: str = "pET-28a(+)") -> dict:
-    """A default E. coli expression construct. Host, vector and tags are assumptions, not advice:
-    they are wrong for any glycosylated, disulfide-rich or membrane protein."""
+HOST_CONSTRUCTS: dict[str, dict] = {
+    "E. coli BL21(DE3)": {
+        "vector": "pET-28a(+)",
+        "tags": ["N-terminal His6", "TEV cleavage site"],
+        "assumption": "prokaryotic host: no glycosylation and a reducing cytoplasm",
+        "notes": "codon-replaced for E. coli (one preferred codon per residue), not CAI-optimized",
+    },
+    "E. coli SHuffle T7": {
+        "vector": "pET-28a(+)",
+        "tags": ["N-terminal His6", "TEV cleavage site"],
+        "assumption": "prokaryotic host: no glycosylation, but disulfides may form in vivo",
+        "notes": "E. coli codon replacement; oxidising cytoplasm, so disulfides may form in vivo",
+    },
+    "E. coli periplasm (pelB)": {
+        "vector": "pET-22b(+) (pelB leader)",
+        "tags": ["pelB signal peptide", "C-terminal His6"],
+        "assumption": "prokaryotic host: no glycosylation; the signal peptide is cleaved in vivo",
+        "notes": "E. coli codon replacement; periplasmic export, so expect a lower yield",
+    },
+    "HEK293-F transient": {
+        "vector": "pcDNA3.4 (CMV)",
+        "tags": ["IgK secretion signal", "C-terminal His6"],
+        "assumption": "mammalian host: N-glycosylation sequons will be occupied",
+        "notes": "the ORF shown uses the E. coli codon table; re-optimize for human codon usage "
+        "before ordering the mammalian construct",
+    },
+}
+DEFAULT_CONSTRUCT_HOST = "E. coli BL21(DE3)"
+
+
+def construct(
+    sequence: str,
+    label: str,
+    host: str = DEFAULT_CONSTRUCT_HOST,
+    vector: str | None = None,
+) -> dict:
+    """An expression construct for one host. Host, vector and tags are assumptions, not advice:
+    a default is wrong for any glycosylated, disulfide-rich or membrane protein."""
     orf = seqlib.back_translate(sequence)
+    if host not in HOST_CONSTRUCTS:
+        host = DEFAULT_CONSTRUCT_HOST
+    spec = HOST_CONSTRUCTS[host]
     return {
         "label": label,
-        "vector": vector,
-        "expression_host": "E. coli BL21(DE3)",
-        "tags": ["N-terminal His6", "TEV cleavage site"],
+        "vector": vector or spec["vector"],
+        "expression_host": host,
+        "tags": list(spec["tags"]),
         "orf_length_bp": len(orf),
         "orf": orf,
         "gc_fraction": seqlib.gc_content(orf),
@@ -139,11 +177,11 @@ def construct(sequence: str, label: str, vector: str = "pET-28a(+)") -> dict:
             sequence, disulfides=False
         ),
         "assumptions": [
-            "prokaryotic host: no glycosylation and an oxidising-poor cytoplasm",
+            spec["assumption"],
             "single preferred codon per residue; hand to a vendor optimizer before ordering",
-            "tags and vector are defaults, not chosen for this protein",
+            "tags and vector are host defaults, not chosen for this protein",
         ],
-        "notes": "codon-replaced for E. coli (one preferred codon per residue), not CAI-optimized",
+        "notes": spec["notes"],
     }
 
 

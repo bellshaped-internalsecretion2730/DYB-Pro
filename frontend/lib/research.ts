@@ -52,7 +52,10 @@ export const research = {
       body,
     ),
 
-  risk: (commitId: string) => api.get<RiskReport>(`/lab/commits/${commitId}/wetlab/risk`),
+  risk: (commitId: string, host?: string) =>
+    api.get<RiskReport>(
+      `/lab/commits/${commitId}/wetlab/risk${host ? `?host=${encodeURIComponent(host)}` : ""}`,
+    ),
   latestPlan: (commitId: string) => api.get<WetlabPlan | null>(`/lab/commits/${commitId}/wetlab/plan`),
   buildPlan: (commitId: string, body: { host: string; max_assays: number }) =>
     api.post<WetlabPlan>(`/lab/commits/${commitId}/wetlab/plan`, body),
