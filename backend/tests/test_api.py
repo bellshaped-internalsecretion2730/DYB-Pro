@@ -88,6 +88,18 @@ def test_fasta_upload_creates_a_root_commit(client):
     ).json()
     assert artifacts and artifacts[0]["sha256"]
 
+    structure = client.get(
+        f"/api/commits/{commit_id}/structure", headers=headers("viewer")
+    )
+    assert structure.status_code == 200
+    assert structure.headers["content-type"].startswith("chemical/x-pdb")
+    assert structure.headers["x-dyb-pro-structure-source"] == (
+        "model:coarse-geometric:on-demand"
+    )
+    assert structure.headers["x-dyb-pro-structure-ephemeral"] == "true"
+    assert structure.text.startswith("REMARK  DYB Pro CA trace (model:coarse-geometric)")
+    assert sum(line.startswith("ATOM") for line in structure.text.splitlines()) == 56
+
 
 def test_upload_does_not_claim_experimental_provenance_from_the_extension(client):
     project_id = _new_project(client)
@@ -97,9 +109,15 @@ def test_upload_does_not_claim_experimental_provenance_from_the_extension(client
     commit_id = body["commits"][0]["id"]
     commit = client.get(f"/api/commits/{commit_id}", headers=headers("viewer")).json()
     assert commit["structure_source"] == "uploaded:pdb (provenance undeclared)"
-    assert client.get(
+    structure = client.get(
         f"/api/commits/{commit_id}/structure", headers=headers("viewer")
-    ).status_code == 200
+    )
+    assert structure.status_code == 200
+    assert structure.text == PDB
+    assert structure.headers["x-dyb-pro-structure-source"] == (
+        "uploaded:pdb (provenance undeclared)"
+    )
+    assert "x-dyb-pro-structure-ephemeral" not in structure.headers
 
 
 def test_declared_experimental_method_is_believed(client):

@@ -72,7 +72,9 @@ from app.services import (
     wetlab,
 )
 from app.storage import store
+from app.toolkit import folding
 from app.toolkit import sequence as seqlib
+from app.toolkit import structure as structlib
 from app.versioning import (
     MergeConflict,
     branch_from,
@@ -879,7 +881,18 @@ def commit_structure(
 ) -> Response:
     commit = _get_commit(db, user, commit_id)
     if not commit.structure_key:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no structure for this commit")
+        # Sequence-only commits have no immutable coordinate artifact. Give the viewer a
+        # deterministic, ephemeral C-alpha scaffold rather than a dead screen, while keeping
+        # provenance explicit: this is neither an experimental structure nor a prediction.
+        model = folding.fold_sequence(commit.sequence, name=commit.label or commit.id[:12])
+        return Response(
+            content=structlib.structure_to_bytes(model),
+            media_type="chemical/x-pdb",
+            headers={
+                "X-DYB-Pro-Structure-Source": f"{model.source}:on-demand",
+                "X-DYB-Pro-Structure-Ephemeral": "true",
+            },
+        )
     artifact = db.scalar(select(Artifact).where(Artifact.key == commit.structure_key))
     backend = artifact.backend if artifact else "s3"
     try:
