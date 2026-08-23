@@ -17,6 +17,9 @@ export type Repr = "cartoon" | "backbone" | "spacefill";
 /** Colour themes that carry real information for Cα-only coordinates. */
 export type ColorTheme = "sequence-id" | "chain-id" | "residue-name" | "hydrophobicity" | "uniform";
 
+/** Canvas-only appearance. This never changes molecular coordinates or exported files. */
+export type ViewerBackground = "studio" | "light";
+
 export const REPR_LABELS: Record<Repr, string> = {
   cartoon: "tube",
   backbone: "Cα trace",
@@ -29,6 +32,11 @@ export const COLOR_LABELS: Record<ColorTheme, string> = {
   "residue-name": "residue",
   hydrophobicity: "hydrophobicity",
   uniform: "uniform",
+};
+
+const VIEWER_BACKGROUND_COLORS: Record<ViewerBackground, number> = {
+  studio: 0xfcfbf9,
+  light: 0xffffff,
 };
 
 export async function createViewer(target: HTMLDivElement): Promise<PluginUIContext> {
@@ -53,6 +61,17 @@ export async function createViewer(target: HTMLDivElement): Promise<PluginUICont
       // available on GPU-less machines; without this the viewer never initialises.
       config: [[PluginConfig.General.AllowMajorPerformanceCaveat, true]],
     },
+  });
+}
+
+/** Updates Mol*'s real WebGL clear colour, including screenshots and full screen. */
+export async function setViewerBackground(
+  plugin: PluginUIContext,
+  background: ViewerBackground,
+): Promise<void> {
+  const { Color } = await import("molstar/lib/mol-util/color");
+  plugin.canvas3d?.setProps({
+    renderer: { backgroundColor: Color(VIEWER_BACKGROUND_COLORS[background]) },
   });
 }
 

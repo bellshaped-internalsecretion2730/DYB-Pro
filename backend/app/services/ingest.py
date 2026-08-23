@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import logging
+import re
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +26,9 @@ CONTENT_TYPES = {
     "cif": "chemical/x-cif",
     "csv": "text/csv",
 }
+
+BINDING_INPUT_KINDS = {"target": "target_pdb", "ligand": "ligand_pdb"}
+MAX_BINDING_INPUT_BYTES = 25 * 1024 * 1024
 
 
 def detect_kind(filename: str, text: str) -> str:
@@ -138,6 +144,112 @@ def _store(db: Session, project: Project, kind: str, filename: str, data: bytes)
     db.add(artifact)
     db.flush()
     return artifact
+
+
+def _pdb_atom_count(text: str, *, role: str) -> int:
+    records = [
+        line
+        for line in text.splitlines()
+        if line.startswith("ATOM  ") or line.startswith("HETATM")
+    ]
+    if role == "target" and not any(line.startswith("ATOM  ") for line in records):
+        raise ValueError("target PDB needs at least one protein ATOM record")
+    if not records:
+        raise ValueError(f"{role} PDB needs at least one ATOM or HETATM coordinate")
+    valid = 0
+    for line in records:
+        try:
+            float(line[30:38])
+            float(line[38:46])
+            float(line[46:54])
+        except (TypeError, ValueError):
+            continue
+        valid += 1
+    if valid == 0:
+        raise ValueError(f"{role} PDB has no parseable XYZ coordinates")
+    return valid
+
+
+def ingest_binding_input(
+    db: Session,
+    project: Project,
+    role: str,
+    filename: str,
+    data: bytes,
+) -> dict:
+    """Store a target or ligand coordinate input without creating a protein commit.
+
+    Ligand-only PDB files commonly have only HETATM records, so routing them through the generic
+    structure upload would incorrectly require a protein sequence. Binding inputs remain immutable
+    artifacts and are supplied to future Pharmakon/assistant contexts by hash.
+    """
+    if role not in BINDING_INPUT_KINDS:
+        raise ValueError("binding input role must be 'target' or 'ligand'")
+    if not data:
+        raise ValueError("empty file")
+    if len(data) > MAX_BINDING_INPUT_BYTES:
+        raise ValueError("PDB input exceeds the 25 MB limit")
+    safe_name = Path(filename or f"{role}.pdb").name
+    if not safe_name.lower().endswith((".pdb", ".ent")):
+        raise ValueError("binding inputs must be PDB or ENT files")
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", safe_name)[:180] or f"{role}.pdb"
+    text = data.decode("utf-8", "replace")
+    atom_count = _pdb_atom_count(text, role=role)
+    digest = hashlib.sha256(data).hexdigest()
+    kind = BINDING_INPUT_KINDS[role]
+    key = f"{project.id}/binding/{role}/{digest[:16]}-{safe_name}"
+    stored = store.put(key, data, content_type="chemical/x-pdb")
+    artifact = Artifact(
+        project_id=project.id,
+        kind=kind,
+        filename=safe_name,
+        key=stored.key,
+        backend=stored.backend,
+        sha256=stored.sha256,
+        size=stored.size,
+        content_type="chemical/x-pdb",
+    )
+    db.add(artifact)
+    db.flush()
+    return {
+        "id": artifact.id,
+        "role": role,
+        "kind": kind,
+        "filename": artifact.filename,
+        "sha256": artifact.sha256,
+        "size": artifact.size,
+        "atom_count": atom_count,
+        "created_at": artifact.created_at,
+    }
+
+
+def binding_input_summaries(db: Session, project_id: str) -> list[dict]:
+    rows = db.scalars(
+        select(Artifact)
+        .where(
+            Artifact.project_id == project_id,
+            Artifact.kind.in_(BINDING_INPUT_KINDS.values()),
+        )
+        .order_by(Artifact.created_at.desc())
+    ).all()
+    latest: dict[str, Artifact] = {}
+    for artifact in rows:
+        role = next((r for r, kind in BINDING_INPUT_KINDS.items() if kind == artifact.kind), "")
+        if role and role not in latest:
+            latest[role] = artifact
+    return [
+        {
+            "id": artifact.id,
+            "role": role,
+            "kind": artifact.kind,
+            "filename": artifact.filename,
+            "sha256": artifact.sha256,
+            "size": artifact.size,
+            "atom_count": None,
+            "created_at": artifact.created_at,
+        }
+        for role, artifact in latest.items()
+    ]
 
 
 def ingest_file(

@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 
-export type RailSection = "ask" | "agents" | "history" | "files" | "handoff";
+export type RailSection = "ask" | "agents" | "history" | "files" | "handoff" | "pharma";
 
 type Item = { id: RailSection; label: string; hint: string; path: React.ReactNode };
 
@@ -62,6 +62,17 @@ const ITEMS: Item[] = [
         <circle cx={18} cy={6} r={2.5} />
         <circle cx={18} cy={18} r={2.5} />
         <path d="M8.2 11l7.6-4M8.2 13l7.6 4" />
+      </>
+    ),
+  },
+  {
+    id: "pharma",
+    label: "Drug discovery programs",
+    hint: "programs · target, ligand and rounds",
+    path: (
+      <>
+        <path d="M7 3h10M9 3v5l-4 9a3 3 0 0 0 2.7 4h8.6a3 3 0 0 0 2.7-4l-4-9V3" />
+        <path d="M7 15h10" />
       </>
     ),
   },

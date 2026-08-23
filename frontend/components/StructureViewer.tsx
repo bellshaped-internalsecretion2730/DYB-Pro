@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { detectWebGL } from "@/lib/webgl";
 import {
@@ -24,10 +24,12 @@ import {
   selectResidues,
   setColorTheme,
   setRepresentation,
+  setViewerBackground,
   structureSource,
   superposeLoaded,
   type ColorTheme,
   type Repr,
+  type ViewerBackground,
 } from "@/lib/molstar";
 import type { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 
@@ -43,6 +45,7 @@ const UNAVAILABLE: [string, string][] = [
 
 const REPRS: Repr[] = ["cartoon", "backbone", "spacefill"];
 const COLORS: ColorTheme[] = ["sequence-id", "chain-id", "residue-name", "hydrophobicity", "uniform"];
+const VIEWER_BACKGROUND_KEY = "dyb-pro.viewer-background";
 
 const COLOR_TIPS: Record<ColorTheme, string> = {
   "sequence-id": "colour ramps along the chain from N- to C-terminus",
@@ -65,6 +68,7 @@ export default function StructureViewer({
   mutations,
   pasted,
   marked,
+  fullscreenOverlay,
 }: {
   commitId: string | null;
   compareCommitId?: string | null;
@@ -73,7 +77,9 @@ export default function StructureViewer({
   mutations?: string[];
   pasted?: { text: string; name: string } | null;
   marked?: number[];
+  fullscreenOverlay?: ReactNode;
 }) {
+  const viewerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<PluginUIContext | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "empty" | "error" | "nogl">(
@@ -83,10 +89,15 @@ export default function StructureViewer({
   const [pdb, setPdb] = useState<string | null>(null);
   const [repr, setRepr] = useState<Repr>("cartoon");
   const [color, setColor] = useState<ColorTheme>("sequence-id");
+  const [viewerBackground, setViewerBackgroundMode] = useState<ViewerBackground>("studio");
+  const [backgroundPreferenceLoaded, setBackgroundPreferenceLoaded] = useState(false);
+  const viewerBackgroundRef = useRef<ViewerBackground>("studio");
   const [showMutations, setShowMutations] = useState(true);
   const [range, setRange] = useState("");
   const [pair, setPair] = useState("");
   const [rmsd, setRmsd] = useState<number | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showFullscreenPanels, setShowFullscreenPanels] = useState(false);
 
   const mutationResidues = useMemo(
     () =>
@@ -95,6 +106,24 @@ export default function StructureViewer({
         .filter((n): n is number => n !== null && n > 0),
     [mutations],
   );
+
+  useEffect(() => {
+    const saved = window.localStorage?.getItem(VIEWER_BACKGROUND_KEY);
+    if (saved === "studio" || saved === "light") {
+      viewerBackgroundRef.current = saved;
+      setViewerBackgroundMode(saved);
+    }
+    setBackgroundPreferenceLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    viewerBackgroundRef.current = viewerBackground;
+    if (backgroundPreferenceLoaded) {
+      window.localStorage?.setItem(VIEWER_BACKGROUND_KEY, viewerBackground);
+    }
+    const plugin = pluginRef.current;
+    if (plugin) void setViewerBackground(plugin, viewerBackground);
+  }, [backgroundPreferenceLoaded, viewerBackground]);
 
   const parseRange = useCallback((value: string): [number, number] | null => {
     const m = /^\s*(\d+)\s*(?:[-–:]\s*(\d+))?\s*$/.exec(value);
@@ -113,6 +142,7 @@ export default function StructureViewer({
       return;
     }
     let disposed = false;
+    let observer: ResizeObserver | null = null;
     const container = containerRef.current;
     if (!container) return;
     void createViewer(container).then((plugin) => {
@@ -121,12 +151,41 @@ export default function StructureViewer({
         return;
       }
       pluginRef.current = plugin;
+      void setViewerBackground(plugin, viewerBackgroundRef.current);
+      if (typeof ResizeObserver !== "undefined") {
+        observer = new ResizeObserver(() => {
+          requestAnimationFrame(() => plugin.handleResize());
+        });
+        observer.observe(container);
+      }
+      plugin.handleResize();
     });
     return () => {
       disposed = true;
+      observer?.disconnect();
       pluginRef.current?.dispose();
       pluginRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const syncFullscreen = () => {
+      const active = document.fullscreenElement === viewerRef.current;
+      setIsFullscreen(active);
+      if (!active) setShowFullscreenPanels(false);
+      requestAnimationFrame(() => pluginRef.current?.handleResize());
+    };
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (document.fullscreenElement === viewerRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+    setShowFullscreenPanels(false);
+    if (viewerRef.current?.requestFullscreen) await viewerRef.current.requestFullscreen();
   }, []);
 
   // Structure loading for the selected commit.
@@ -273,7 +332,28 @@ export default function StructureViewer({
   const mutated = new Set(mutationResidues);
 
   return (
-    <div className="viewer" data-testid="structure-3d" onKeyDown={onKeyDown} tabIndex={-1}>
+    <div
+      ref={viewerRef}
+      className={`viewer viewer-background-${viewerBackground}${isFullscreen && !showFullscreenPanels ? " viewer-chrome-hidden" : ""}`}
+      data-testid="structure-3d"
+      onKeyDown={onKeyDown}
+      tabIndex={-1}
+    >
+      <div className="viewer-fullscreen-actions">
+        {isFullscreen && (
+          <button
+            className="tab"
+            type="button"
+            aria-pressed={showFullscreenPanels}
+            onClick={() => setShowFullscreenPanels((shown) => !shown)}
+          >
+            {showFullscreenPanels ? "Hide panels" : "Show panels"}
+          </button>
+        )}
+        <button className="tab" type="button" onClick={() => void toggleFullscreen()}>
+          {isFullscreen ? "Exit full screen" : "Full screen"}
+        </button>
+      </div>
       <div className="pane-header">
         <div className="row">
           <strong style={{ fontSize: 12.5 }}>{pasted?.name || label || "no version selected"}</strong>
@@ -334,6 +414,18 @@ export default function StructureViewer({
               ))}
             </select>
           </label>
+          <button
+            className="tab tip viewer-light-toggle"
+            type="button"
+            aria-label="Light protein background"
+            aria-pressed={viewerBackground === "light"}
+            data-tip="Pure white protein canvas. Display only: coordinates and PDB exports do not change."
+            onClick={() =>
+              setViewerBackgroundMode((current) => (current === "light" ? "studio" : "light"))
+            }
+          >
+            light
+          </button>
         </div>
       </div>
 
@@ -374,6 +466,12 @@ export default function StructureViewer({
           </div>
         )}
       </div>
+
+      {isFullscreen && showFullscreenPanels && fullscreenOverlay && (
+        <aside className="viewer-fullscreen-overlay" aria-label="full screen activity panel">
+          {fullscreenOverlay}
+        </aside>
+      )}
 
       {sequence && (
         <div className="seq-track" data-testid="sequence-track">
@@ -417,7 +515,7 @@ export default function StructureViewer({
             }}
           />
           <button className="tab tip" type="button" data-tip="select and orbit to the range · key F" onClick={focusRange}>
-            focus
+            Focus
           </button>
           <input
             className="mini-input"
@@ -435,7 +533,7 @@ export default function StructureViewer({
             data-tip="Cα–Cα distance in the model geometry"
             onClick={measurePair}
           >
-            measure
+            Measure
           </button>
           <button
             className="tab tip"

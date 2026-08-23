@@ -36,7 +36,6 @@ class Candidate:
     agent_role: str = "sequence"
     citations: list[str] = field(default_factory=list)
     source_run_id: str | None = None  # the AgentRun that actually produced this candidate
-    provider: str | None = None  # external compute provider when this is not an agent proposal
 
     def resolved(self) -> tuple[str, list[dict]]:
         if self.mutations:

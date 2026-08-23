@@ -30,24 +30,8 @@ class Settings(BaseSettings):
     devin_session_timeout_seconds: float = 1800.0
     devin_request_timeout_seconds: float = 60.0
     devin_child_repo: str | None = None
-    devin_secret_ids: str = ""
     agent_max_attempts: int = 2
     allow_local_simulation: bool = True
-
-    # GPU compute providers. DYB Pro orchestrates these services; it does not pretend that its
-    # local coarse geometry is AlphaFold or ProteinMPNN output. URLs may be either a NIM base URL
-    # or the complete prediction endpoint.
-    alphafold_api_url: str | None = None
-    alphafold_api_key: str | None = None
-    alphafold_model_version: str = "alphafold2-nim"
-    alphafold_timeout_seconds: float = 3600.0
-    proteinmpnn_api_url: str | None = None
-    proteinmpnn_api_key: str | None = None
-    proteinmpnn_model_version: str = "proteinmpnn-nim"
-    proteinmpnn_timeout_seconds: float = 900.0
-    proteinmpnn_num_sequences: int = 8
-    proteinmpnn_sampling_temperature: float = 0.1
-    proteinmpnn_random_seed: int = 37
 
     # Research daemon
     research_daemon_enabled: bool = True
@@ -71,8 +55,11 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str | None = None
-    openai_model: str = "gpt-4.1-mini"
+    openai_model: str = "gpt-5.6-terra"
     openai_vision_model: str = "gpt-4.1-mini"
+    openai_chat_models: str = (
+        "gpt-5.6-terra,gpt-5.6-sol,gpt-5.6-luna,gpt-5.4,gpt-4.1-mini"
+    )
 
     # Object storage
     s3_endpoint_url: str | None = None
@@ -100,13 +87,14 @@ class Settings(BaseSettings):
         return not (self.devin_api_flavor == "v3" and not self.devin_org_id)
 
     @property
-    def devin_secret_id_list(self) -> list[str]:
-        """Organization secret IDs made available to Devin compute sessions."""
-        return [item.strip() for item in self.devin_secret_ids.split(",") if item.strip()]
-
-    @property
     def openai_enabled(self) -> bool:
         return bool(self.openai_api_key)
+
+    @property
+    def openai_chat_model_list(self) -> list[str]:
+        """Models exposed by the workspace selector, with the configured default first."""
+        configured = [m.strip() for m in self.openai_chat_models.split(",") if m.strip()]
+        return list(dict.fromkeys([self.openai_model, *configured]))
 
 
 @lru_cache

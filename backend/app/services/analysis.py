@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 
 from app.config import Settings, get_settings
 
@@ -156,3 +157,169 @@ def analyze_design(
     except Exception as exc:
         logger.warning("openai analyze_design failed: %s", exc)
         return {"provider": "deterministic", "assessment": "", "fallback_reason": str(exc)[:300]}
+
+
+CHAT_ACTION_TYPES = {
+    "run_cycle",
+    "handoff",
+    "open_tab",
+    "trigger_research",
+    "select_version",
+    "advance_program",
+}
+CHAT_TABS = ("structure", "lineage", "shortlist", "research", "lab", "data")
+
+
+def _infer_chat_actions(prompt: str, context: dict) -> list[dict]:
+    """Provide dependable actions for explicit commands even if the model omits tool JSON."""
+    text = prompt.strip()
+    lower = text.lower()
+    if re.search(r"\b(run|start|launch)\b.{0,30}\b(design )?cycle\b", lower):
+        return [{"type": "run_cycle", "value": text, "reason": "Explicit design-cycle request."}]
+    if re.search(r"\b(hand ?off|delegate)\b", lower):
+        return [{"type": "handoff", "value": text, "reason": "Explicit swarm handoff request."}]
+    if re.search(r"\b(refresh|run|update)\b.{0,24}\bresearch\b", lower):
+        return [{"type": "trigger_research", "value": "", "reason": "Explicit research refresh."}]
+    for tab in CHAT_TABS:
+        if re.search(rf"\b(open|show|view)\b.{{0,24}}\b{re.escape(tab)}\b", lower):
+            return [{"type": "open_tab", "value": tab, "reason": f"Open {tab}."}]
+    programs = context.get("programs") or []
+    if (
+        re.search(r"\b(run|advance|continue)\b.{0,30}\b(program|pharmakon|round)\b", lower)
+        and len(programs) == 1
+    ):
+        return [
+            {
+                "type": "advance_program",
+                "value": str(programs[0].get("id") or ""),
+                "reason": "Advance the selected project's only drug program.",
+            }
+        ]
+    return []
+
+
+def _sanitize_chat_actions(value: object, enabled: bool) -> list[dict]:
+    if not enabled or not isinstance(value, list):
+        return []
+    actions: list[dict] = []
+    for candidate in value[:5]:
+        if not isinstance(candidate, dict):
+            continue
+        action_type = str(candidate.get("type") or "")
+        action_value = str(candidate.get("value") or "")[:1000]
+        reason = str(candidate.get("reason") or "")[:300]
+        if action_type not in CHAT_ACTION_TYPES:
+            continue
+        if action_type == "open_tab" and action_value not in CHAT_TABS:
+            continue
+        actions.append({"type": action_type, "value": action_value, "reason": reason})
+    return actions
+
+
+def chat_workspace(
+    *,
+    messages: list[dict],
+    context: dict,
+    requested_model: str | None = None,
+    skill: str = "workflow",
+    actions_enabled: bool = True,
+    settings: Settings | None = None,
+) -> dict:
+    """Context-aware research chat with a small, explicit workspace action contract."""
+    settings = settings or get_settings()
+    model = (
+        requested_model
+        if requested_model in settings.openai_chat_model_list
+        else settings.openai_model
+    )
+    last_prompt = next(
+        (
+            str(message.get("content") or "")
+            for message in reversed(messages)
+            if message.get("role") == "user"
+        ),
+        "",
+    )
+    inferred = _infer_chat_actions(last_prompt, context) if actions_enabled else []
+    if not settings.openai_enabled:
+        return {
+            "text": (
+                "Ready to apply that workspace action. Add an OpenAI key for a context-aware "
+                "scientific explanation."
+                if inferred
+                else (
+                    "OpenAI chat is not configured. Local design cycles, versioning and the "
+                    "Devin swarm remain available."
+                )
+            ),
+            "actions": inferred,
+            "provider": "deterministic",
+            "model": model,
+            "skill": skill,
+        }
+
+    system = """You are DYB Pro's concise research workspace agent.
+Use the supplied selected protein version, project, cycle, drug-program and PDB-input context.
+Never invent assay results, affinity, docking, safety, efficacy, citations or completed compute.
+Keep visible text short. When the user explicitly asks for a supported workspace operation and
+actions are enabled, return the corresponding action instead of merely describing the button.
+Supported actions: run_cycle (value is the brief), handoff (value is the brief), open_tab
+(structure|lineage|shortlist|research|lab|data), trigger_research, select_version (commit id or
+label), advance_program (program id). Actions are reversible or provenance-tracked by the existing
+workspace APIs; never claim they succeeded before the UI reports the result."""
+    skill_notes = {
+        "workflow": "Coordinate the workspace and prefer an action for an explicit command.",
+        "structure": "Focus on the selected version and uploaded target/ligand coordinates.",
+        "research": "Explain evidence and uncertainty; do not propose actions unless explicitly requested.",
+        "drug-discovery": "Use the selected project's Pharmakon programs and binding inputs.",
+    }
+    prompt = (
+        f"Skill: {skill_notes.get(skill, skill_notes['workflow'])}\n"
+        f"Actions enabled: {actions_enabled}\n"
+        f"Workspace context:\n{json.dumps(context, default=str)[:12000]}"
+    )
+    try:
+        response = _client(settings).chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "system", "content": prompt},
+                *messages[-10:],
+                {
+                    "role": "system",
+                    "content": (
+                        "Return JSON only: {\"text\": string, \"actions\": "
+                        "[{\"type\": string, \"value\": string, \"reason\": string}]}."
+                    ),
+                },
+            ],
+            response_format={"type": "json_object"},
+            **_sampling_kwargs(model),
+        )
+        parsed = json.loads(response.choices[0].message.content or "{}")
+        text = str(parsed.get("text") or "").strip()[:6000]
+        if not text:
+            raise ValueError("assistant returned no text")
+        actions = _sanitize_chat_actions(parsed.get("actions"), actions_enabled)
+        if not actions and inferred:
+            actions = inferred
+        return {
+            "text": text,
+            "actions": actions,
+            "provider": "openai",
+            "model": model,
+            "skill": skill,
+        }
+    except Exception as exc:
+        logger.warning("openai workspace chat failed: %s", exc)
+        return {
+            "text": (
+                "The model is unavailable, but the requested workspace action is ready."
+                if inferred
+                else "The model is temporarily unavailable. Local tools and the Devin swarm are still online."
+            ),
+            "actions": inferred,
+            "provider": "deterministic",
+            "model": model,
+            "skill": skill,
+        }

@@ -18,7 +18,7 @@ function summary(parsed: ParsedInput): string {
  *    committed through the existing upload endpoint;
  *  - a pasted sequence is validated and compared against the selected version locally — nothing
  *    folds it on demand, because no endpoint does that;
- *  - a target sequence is attached to the selected project and becomes docking/folding context.
+ *  - the target sequence is only consumed by the backend when a project is created with it.
  */
 export default function SequenceLoader({
   project,
@@ -27,9 +27,8 @@ export default function SequenceLoader({
   busy,
   onRenderStructure,
   onCommitFile,
-  onSetTarget,
+  onCreateTargetProject,
   onCompare,
-  inline = false,
 }: {
   project: Project | null;
   referenceSequence: string | null;
@@ -37,9 +36,8 @@ export default function SequenceLoader({
   busy: boolean;
   onRenderStructure: (text: string, name: string) => void;
   onCommitFile: (file: File) => void;
-  onSetTarget: (targetName: string, targetSequence: string) => void;
+  onCreateTargetProject: (targetName: string, targetSequence: string) => void;
   onCompare: (positions: number[]) => void;
-  inline?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [targetName, setTargetName] = useState("");
@@ -61,10 +59,7 @@ export default function SequenceLoader({
   }, [referenceSequence, parsedWorking]);
 
   return (
-    <div
-      className={`seq-loader${inline ? " inline" : ""}${open ? " open" : ""}`}
-      data-testid="sequence-loader"
-    >
+    <div className="seq-loader" data-testid="sequence-loader">
       <button
         className="tab tip"
         type="button"
@@ -72,10 +67,10 @@ export default function SequenceLoader({
         data-tip="load a target protein and a working protein: pasted PDB/mmCIF renders here, sequences are validated and compared"
         onClick={() => setOpen((v) => !v)}
       >
-        Protein + target
+        sequences
       </button>
       {open && (
-        <div className={`seq-panel glass${inline ? " inline" : ""}`}>
+        <div className="seq-panel glass">
           <label className="field">
             <span className="label">target protein</span>
             <input
@@ -111,17 +106,17 @@ export default function SequenceLoader({
                 <button
                   className="tab tip"
                   type="button"
-                  disabled={busy || !project || !targetName.trim()}
-                  data-tip="attaches this target to the selected project for structure prediction and docking"
-                  onClick={() => onSetTarget(targetName.trim(), parsedTarget.sequence)}
+                  disabled={busy || !targetName.trim()}
+                  data-tip="creates a new project whose docking features use this target — the only place the API accepts a target sequence"
+                  onClick={() => onCreateTargetProject(targetName.trim(), parsedTarget.sequence)}
                 >
-                  set project target
+                  new project with target
                 </button>
               )}
             </div>
           )}
-          <p className="hint tip" data-tip="the target is stored on this project; AlphaFold can add target coordinates when the cycle starts">
-            target sequence feeds AlphaFold and docking when enabled
+          <p className="hint tip" data-tip="POST /projects accepts target_name and target_sequence; no route updates the target of an existing project, and none returns target coordinates">
+            target sequences feed docking features, not the 3D view
           </p>
 
           <label className="field">

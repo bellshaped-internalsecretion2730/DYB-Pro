@@ -60,12 +60,6 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
-  patch: <T,>(path: string, body: unknown) =>
-    request<T>(path, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
   upload: async <T,>(path: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
@@ -84,39 +78,47 @@ export type Provider = {
   error?: string | null;
 };
 
+export type BindingInput = {
+  id: string;
+  role: "target" | "ligand";
+  kind: string;
+  filename: string;
+  sha256: string;
+  size: number;
+  atom_count?: number | null;
+  created_at: string;
+};
+
+export type AssistantAction = {
+  type:
+    | "run_cycle"
+    | "handoff"
+    | "open_tab"
+    | "trigger_research"
+    | "select_version"
+    | "advance_program";
+  value: string;
+  reason: string;
+};
+
+export type AssistantChatResponse = {
+  text: string;
+  actions: AssistantAction[];
+  provider: string;
+  model: string;
+  skill: string;
+};
+
 export type Project = {
   id: string;
   name: string;
   goal: string;
   target_name?: string | null;
-  target_sequence?: string | null;
   is_demo: boolean;
   commit_count: number;
   cycle_count: number;
   branches: string[];
   head_commit_id?: string | null;
-};
-
-export type WorkflowTool = "alphafold" | "proteinmpnn";
-export type WorkflowToolMode = "off" | "auto" | "required";
-export type WorkflowTools = Record<WorkflowTool, WorkflowToolMode>;
-
-/** Structure/design compute made available to the orchestrator for a new run. */
-export const DEFAULT_WORKFLOW_TOOLS: WorkflowTools = {
-  alphafold: "auto",
-  proteinmpnn: "auto",
-};
-
-export type ComputeRun = {
-  tool: WorkflowTool;
-  target?: string;
-  status: "finished" | "failed" | "skipped" | "reused" | string;
-  reason?: string;
-  provider?: string;
-  model?: string;
-  artifact_id?: string;
-  output_sha256?: string;
-  candidate_count?: number;
 };
 
 export type Cycle = {
@@ -132,15 +134,7 @@ export type Cycle = {
   acu_limit: number;
   acus_used: number;
   orchestrator_session_url?: string | null;
-  plan: {
-    strategy?: string;
-    agents?: { role: string; task: string }[];
-    workflow_tools?: Partial<WorkflowTools>;
-    workflow?: {
-      policies?: Partial<WorkflowTools>;
-      runs?: ComputeRun[];
-    };
-  };
+  plan: { strategy?: string; agents?: { role: string; task: string }[] };
 };
 
 export type AgentRun = {

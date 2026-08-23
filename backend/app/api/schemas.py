@@ -15,12 +15,6 @@ class ProjectCreate(BaseModel):
     target_sequence: str = ""
 
 
-class ProjectUpdate(BaseModel):
-    goal: str | None = None
-    target_name: str | None = None
-    target_sequence: str | None = None
-
-
 class ProjectOut(BaseModel):
     id: str
     name: str
@@ -35,21 +29,10 @@ class ProjectOut(BaseModel):
     head_commit_id: str | None = None
 
 
-ToolPolicy = Literal["off", "auto", "required"]
-
-
-class WorkflowTools(BaseModel):
-    """Scientist policy for allowlisted GPU tools used by the cycle worker."""
-
-    alphafold: ToolPolicy = "auto"
-    proteinmpnn: ToolPolicy = "auto"
-
-
 class CycleCreate(BaseModel):
     brief: str = Field(min_length=1, description="natural-language research brief for this cycle")
     branch: str = "main"
     acu_limit: int = Field(default=20, ge=1, le=200)
-    workflow_tools: WorkflowTools = Field(default_factory=WorkflowTools)
 
 
 class CycleOut(BaseModel):
@@ -274,5 +257,50 @@ class ProviderStatus(BaseModel):
     devin_error: str | None = None
     local_simulation_allowed: bool
     openai_configured: bool
-    compute: dict = {}
     error: str | None = None
+
+
+class AssistantMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class AssistantChatRequest(BaseModel):
+    messages: list[AssistantMessage] = Field(min_length=1, max_length=10)
+    selected_commit_id: str | None = None
+    cycle_id: str | None = None
+    model: str | None = Field(default=None, max_length=80)
+    skill: Literal["workflow", "structure", "research", "drug-discovery"] = "workflow"
+    actions_enabled: bool = True
+
+
+class AssistantAction(BaseModel):
+    type: Literal[
+        "run_cycle",
+        "handoff",
+        "open_tab",
+        "trigger_research",
+        "select_version",
+        "advance_program",
+    ]
+    value: str = Field(default="", max_length=1000)
+    reason: str = Field(default="", max_length=300)
+
+
+class AssistantChatOut(BaseModel):
+    text: str
+    actions: list[AssistantAction] = Field(default_factory=list)
+    provider: str
+    model: str
+    skill: str
+
+
+class BindingInputOut(BaseModel):
+    id: str
+    role: Literal["target", "ligand"]
+    kind: str
+    filename: str
+    sha256: str
+    size: int
+    atom_count: int | None = None
+    created_at: datetime

@@ -24,10 +24,12 @@ os.environ.update(
         "SEED_VIEWER_API_KEY": "test-viewer",
     }
 )
-# Tests must never touch the real Devin/OpenAI APIs.
-os.environ.pop("DEVIN_API_KEY", None)
-os.environ.pop("DEVIN_ORG_ID", None)
-os.environ.pop("OPENAI_API_KEY", None)
+# Tests must never touch credentials that may exist in a developer's backend/.env file. Explicit
+# empty environment values override pydantic-settings' dotenv fallback; merely popping them would
+# allow the secrets to be loaded again from disk.
+os.environ["DEVIN_API_KEY"] = ""
+os.environ["DEVIN_ORG_ID"] = ""
+os.environ["OPENAI_API_KEY"] = ""
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

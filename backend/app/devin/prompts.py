@@ -35,9 +35,7 @@ def orchestrator_prompt(
     available_roles: list[str],
     shortlist_size: int,
     problem_spec: str | None = None,
-    workflow_tools: dict[str, str] | None = None,
 ) -> str:
-    tool_policies = workflow_tools or {}
     prompt = f"""\
 You are the orchestrator of one in-silico protein design cycle for DYB Pro, a pre-wetlab design
 platform. You plan the cycle and fan out to specialized child agents. You do not modify any code.
@@ -66,14 +64,6 @@ Produce a plan for this cycle. Choose 3-5 child agents from: {", ".join(availabl
 Each child gets one specific, non-overlapping task written as an instruction to a specialist.
 Include focus regions (1-based residue numbers) and things to avoid where the evidence supports it.
 Target a wet-lab shortlist of about {shortlist_size} candidates.
-
-# Allowlisted compute-tool policy
-AlphaFold: {tool_policies.get("alphafold", "auto")}
-ProteinMPNN: {tool_policies.get("proteinmpnn", "auto")}
-These are backend tools, not child-agent roles. You must not claim that either tool ran unless the
-evidence above contains a finished, hash-verified run. When ProteinMPNN is auto or required, assign
-specific 1-based `focus_regions` to the relevant design agents; the backend will allow at most four
-of those positions to vary and will validate every generated sequence.
 
 Respond only with structured output matching the provided schema.
 """

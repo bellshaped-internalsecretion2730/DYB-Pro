@@ -109,6 +109,9 @@ indication: {program.get("indication")}
 objective: {program.get("objective")}
 autonomy level: L{program.get("autonomy_level")}
 
+# Scientist-supplied binding coordinates (immutable artifacts; filenames and hashes only)
+{_block(program.get("binding_inputs") or [])}
+
 # Current stage
 {stage.get("key")} — {stage.get("name")}
 objective: {stage.get("objective")}
@@ -172,6 +175,9 @@ Do not modify any code repository.
 # Program
 target: {program.get("target_name")} | indication: {program.get("indication")}
 objective: {program.get("objective")}
+
+# Scientist-supplied binding coordinates (immutable artifacts; filenames and hashes only)
+{_block(program.get("binding_inputs") or [])}
 
 # Round strategy (from the program orchestrator)
 {strategy}

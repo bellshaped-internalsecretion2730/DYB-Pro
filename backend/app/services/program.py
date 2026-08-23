@@ -52,6 +52,7 @@ from app.pharma.experiments import experiment_plan
 from app.pharma.gates import evaluate_gate
 from app.pharma.metrics import prediction_drift, program_metrics
 from app.pharma.stages import stage as stage_spec
+from app.services import ingest as ingestlib
 
 logger = logging.getLogger(__name__)
 
@@ -550,8 +551,13 @@ def run_round(db: Session, round_id: str, sleep=time.sleep) -> ProgramRound:
         stage_cycles=program.stage_cycles,
     ).as_dict()
 
+    program_context = program_dict(program)
+    program_context["binding_inputs"] = ingestlib.binding_input_summaries(
+        db, program.project_id
+    )
+
     digest = campaign_memory.build_digest(
-        program=program_dict(program),
+        program=program_context,
         gate_history=gate_history(db, program.id),
         exclusions=exclusions(db, program.id),
         lessons=[],
@@ -561,7 +567,7 @@ def run_round(db: Session, round_id: str, sleep=time.sleep) -> ProgramRound:
     ctx = RoundContext(
         program_id=program.id,
         round_id=rnd.id,
-        program=program_dict(program),
+        program=program_context,
         stage={
             "key": spec.key,
             "name": spec.name,

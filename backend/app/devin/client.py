@@ -2,12 +2,12 @@
 
 Supports both API flavors:
   * ``v3`` — organization-scoped endpoints (``/v3/organizations/{org_id}/...``), used by
-    ``cog_`` service-account keys. This is the default.
+    ``cog_`` service-user keys. This is the default.
   * ``v1`` — personal-key endpoints (``/v1/sessions``).
 
 Everything DYB Pro needs is here: create sessions with playbooks/tags/ACU limits/structured
 output schemas, poll status + structured output + ACU consumption, send follow-up messages, list
-child sessions, cancel (archive) sessions, and reconcile playbooks.
+child sessions, cancel sessions, and reconcile playbooks.
 """
 
 from __future__ import annotations
@@ -22,12 +22,12 @@ from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
-# Retained for test/process compatibility with older deployments. Modern cog_ credentials must
-# never be silently retried against legacy v1 endpoints when v3 returns a permission error.
+# A key that is not an organization service account is rejected by /v3/organizations/... even
+# though it works on /v1/sessions, so the resolved flavor is cached per base URL + key.
 _RESOLVED_FLAVOR: dict[tuple[str, str], str] = {}
 
-TERMINAL_STATUSES = {"exit", "error", "expired", "finished", "blocked", "suspended"}
-FAILED_STATUSES = {"error", "expired", "suspended"}
+TERMINAL_STATUSES = {"exit", "error", "expired", "finished", "blocked"}
+FAILED_STATUSES = {"error", "expired"}
 
 
 class DevinAPIError(RuntimeError):
@@ -92,13 +92,17 @@ class DevinClient:
     def __init__(self, settings: Settings | None = None, client: httpx.Client | None = None) -> None:
         self.settings = settings or get_settings()
         if not self.settings.devin_enabled:
-            raise DevinNotConfigured("DEVIN_API_KEY (and DEVIN_ORG_ID for the v3 flavor) must be configured")
+            raise DevinNotConfigured(
+                "DEVIN_API_KEY (and DEVIN_ORG_ID for the v3 flavor) must be configured"
+            )
         self.org_id = self.settings.devin_org_id
         self._flavor_cache_key = (
             self.settings.devin_api_base,
             (self.settings.devin_api_key or "")[-8:],
         )
-        self.flavor = self.settings.devin_api_flavor
+        self.flavor = _RESOLVED_FLAVOR.get(
+            self._flavor_cache_key, self.settings.devin_api_flavor
+        )
         self._client = client or httpx.Client(
             base_url=self.settings.devin_api_base.rstrip("/"),
             headers={
@@ -126,18 +130,27 @@ class DevinClient:
             return "/v1/sessions"
         if path.startswith(f"{org_prefix}/sessions/"):
             rest = path[len(f"{org_prefix}/sessions/") :]
+            if rest.endswith("/messages"):
+                session_id = rest[: -len("/messages")]
+                return f"/v1/sessions/{session_id}/message"
             return f"/v1/sessions/{rest}" if "/" not in rest else None
-        if path.startswith("/v3/enterprise/sessions/") and path.endswith("/messages"):
-            session_id = path[len("/v3/enterprise/sessions/") : -len("/messages")]
-            return f"/v1/sessions/{session_id}/message"
         return None  # playbooks, schedules and org knowledge are v3-only
 
     def _flavor(self) -> str:
         return _RESOLVED_FLAVOR.get(self._flavor_cache_key, self.flavor)
 
     def api_flavor(self) -> str:
-        """The explicitly configured API flavor; permission errors never change it."""
+        """The flavor actually in use, which is v1 once a non-org key has been demoted."""
         return self._flavor()
+
+    def _demote_to_v1(self, path: str, status_code: int) -> None:
+        logger.warning(
+            "Devin %s on %s: this key is not organization-scoped, using the v1 API instead",
+            status_code,
+            path,
+        )
+        self.flavor = "v1"
+        _RESOLVED_FLAVOR[self._flavor_cache_key] = "v1"
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict:
         self.flavor = self._flavor()
@@ -147,6 +160,15 @@ class DevinClient:
                 raise DevinNotConfigured(f"{path} requires an organization-scoped Devin key")
             path, kwargs = fallback, {k: v for k, v in kwargs.items() if k != "params"}
         response = self._client.request(method, path, **kwargs)
+        if response.status_code in (401, 403) and self.flavor == "v3" and path.startswith("/v3/"):
+            # A personal key is refused by the organization endpoints but works on /v1.
+            fallback = self._v1_equivalent(path)
+            self._demote_to_v1(path, response.status_code)
+            if fallback is None:
+                raise DevinNotConfigured(f"{path} requires an organization-scoped Devin key")
+            kwargs.pop("params", None)
+            response = self._client.request(method, fallback, **kwargs)
+            path = fallback
         if response.status_code >= 400:
             detail = response.text[:600]
             raise DevinAPIError(response.status_code, detail, path)
@@ -174,7 +196,6 @@ class DevinClient:
         idempotent: bool = False,
         knowledge_ids: list[str] | None = None,
         secret_ids: list[str] | None = None,
-        repos: list[str] | None = None,
     ) -> SessionState:
         body: dict[str, Any] = {"prompt": prompt}
         if title:
@@ -191,8 +212,6 @@ class DevinClient:
             body["knowledge_ids"] = knowledge_ids
         if secret_ids is not None:
             body["secret_ids"] = secret_ids
-        if repos is not None and self._flavor() == "v3":
-            body["repos"] = repos
 
         if self._flavor() == "v3":
             if child_playbook_id:
@@ -231,15 +250,17 @@ class DevinClient:
         except DevinAPIError as exc:  # already suspended/finished is fine
             logger.info("cancel message to %s failed (%s), archiving anyway", session_id, exc)
         if self._flavor() == "v3":
-            return self._request("POST", f"/v3/organizations/{self.org_id}/sessions/{session_id}/archive")
-        return {"detail": "archive is only supported on the v3 API"}
+            return self._request("DELETE", f"/v3/organizations/{self.org_id}/sessions/{session_id}")
+        return {"detail": "session termination is only supported on the v3 API"}
 
     def list_sessions(self, tags: list[str] | None = None, limit: int = 50) -> list[dict]:
         if self._flavor() == "v3":
-            params: dict[str, Any] = {"limit": limit}
+            params: dict[str, Any] = {"first": limit}
             if tags:
                 params["tags"] = tags
-            data = self._request("GET", f"/v3/organizations/{self.org_id}/sessions", params=params)
+            data = self._request(
+                "GET", f"/v3/organizations/{self.org_id}/sessions", params=params
+            )
         else:
             data = self._request("GET", "/v1/sessions", params={"limit": limit})
         return list(data.get("sessions") or data.get("items") or [])
@@ -255,7 +276,9 @@ class DevinClient:
         data = self._request("GET", f"/v3/organizations/{self.org_id}/playbooks")
         return list(data.get("playbooks") or data.get("items") or [])
 
-    def create_playbook(self, title: str, body: str, structured_output_schema: dict | None = None) -> dict:
+    def create_playbook(
+        self, title: str, body: str, structured_output_schema: dict | None = None
+    ) -> dict:
         if self._flavor() != "v3":
             raise DevinNotConfigured("playbook management requires the v3 organization API")
         payload: dict[str, Any] = {"title": title, "body": body}
@@ -302,7 +325,9 @@ class DevinClient:
     def delete_schedule(self, scheduled_session_id: str) -> dict:
         if self._flavor() != "v3":
             raise DevinNotConfigured("schedules require the v3 organization API")
-        return self._request("DELETE", f"/v3/organizations/{self.org_id}/schedules/{scheduled_session_id}")
+        return self._request(
+            "DELETE", f"/v3/organizations/{self.org_id}/schedules/{scheduled_session_id}"
+        )
 
     # ---------------------------------------------------------------- knowledge
 
@@ -319,7 +344,7 @@ class DevinClient:
             return self._request(
                 "POST",
                 f"/v3/organizations/{self.org_id}/knowledge/notes",
-                json={"name": name, "body": body, "trigger": trigger},
+                json={"name": name, "body": body, "trigger_description": trigger},
             )
         return self._request(
             "POST",
@@ -343,7 +368,7 @@ class DevinClient:
     def health(self) -> dict:
         """Cheap authenticated call used by /healthz and the UI provider badge."""
         if self._flavor() == "v3":
-            self._request("GET", f"/v3/organizations/{self.org_id}/sessions", params={"limit": 1})
+            self._request("GET", f"/v3/organizations/{self.org_id}/sessions", params={"first": 1})
         else:
             self._request("GET", "/v1/sessions", params={"limit": 1})
         return {"ok": True, "flavor": self.flavor, "org_id": self.org_id}

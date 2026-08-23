@@ -1,4 +1,0 @@
-# Copy to frontend/.dev.vars for local OpenNext preview only.
-# In Cloudflare, create this with `wrangler secret put DYB_PRO_API_KEY`.
-# It must equal SEED_SCIENTIST_API_KEY on the backend Worker.
-DYB_PRO_API_KEY=replace-with-a-long-random-scientist-key

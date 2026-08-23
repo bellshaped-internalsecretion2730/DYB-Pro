@@ -1,4 +1,4 @@
-"""Artifact storage: S3/MinIO with a development-only local fallback."""
+"""Artifact storage: S3/MinIO with a transparent local-filesystem fallback."""
 
 from __future__ import annotations
 
@@ -27,15 +27,9 @@ class ArtifactStore:
 
     def _s3(self):
         if self._checked:
-            if self._client is None and self._requires_object_store:
-                raise RuntimeError("object storage is required when APP_ENV=production")
             return self._client
         self._checked = True
         if not (settings.s3_endpoint_url and settings.s3_access_key and settings.s3_secret_key):
-            if self._requires_object_store:
-                raise RuntimeError(
-                    "S3_ENDPOINT_URL, S3_ACCESS_KEY and S3_SECRET_KEY are required in production"
-                )
             return None
         try:
             import boto3
@@ -49,18 +43,13 @@ class ArtifactStore:
                 region_name=settings.s3_region,
                 config=Config(signature_version="s3v4", retries={"max_attempts": 2}),
             )
-            try:
-                client.head_bucket(Bucket=settings.s3_bucket)
-            except Exception:
-                if self._requires_object_store:
-                    raise
+            existing = {b["Name"] for b in client.list_buckets().get("Buckets", [])}
+            if settings.s3_bucket not in existing:
                 client.create_bucket(Bucket=settings.s3_bucket)
             self._client = client
         except Exception as exc:  # pragma: no cover - depends on infra
-            self._client = None
-            if self._requires_object_store:
-                raise RuntimeError("production object storage is unavailable") from exc
             logger.warning("object store unavailable, using local files: %s", exc)
+            self._client = None
         return self._client
 
     def put(self, key: str, data: bytes, content_type: str = "text/plain") -> StoredObject:
@@ -73,8 +62,6 @@ class ArtifactStore:
                 )
                 return StoredObject(key=key, backend="s3", sha256=digest, size=len(data))
             except Exception as exc:  # pragma: no cover
-                if self._requires_object_store:
-                    raise RuntimeError(f"failed to persist production artifact {key}") from exc
                 logger.warning("s3 put failed for %s: %s", key, exc)
         path = self._local_path(key)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -89,17 +76,9 @@ class ArtifactStore:
                 try:
                     return client.get_object(Bucket=settings.s3_bucket, Key=key)["Body"].read()
                 except Exception as exc:  # pragma: no cover
-                    if self._requires_object_store:
-                        raise RuntimeError(f"failed to read production artifact {key}") from exc
                     logger.warning("s3 get failed for %s: %s", key, exc)
-        if self._requires_object_store:
-            raise RuntimeError(f"local artifact reads are disabled in production ({key})")
         with open(self._local_path(key), "rb") as fh:
             return fh.read()
-
-    @property
-    def _requires_object_store(self) -> bool:
-        return settings.app_env.strip().lower() == "production"
 
     @staticmethod
     def _local_path(key: str) -> str:
