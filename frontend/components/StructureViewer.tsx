@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { detectWebGL } from "@/lib/webgl";
 import {
@@ -65,6 +65,7 @@ export default function StructureViewer({
   mutations,
   pasted,
   marked,
+  fullscreenOverlay,
 }: {
   commitId: string | null;
   compareCommitId?: string | null;
@@ -73,7 +74,9 @@ export default function StructureViewer({
   mutations?: string[];
   pasted?: { text: string; name: string } | null;
   marked?: number[];
+  fullscreenOverlay?: ReactNode;
 }) {
+  const viewerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pluginRef = useRef<PluginUIContext | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "empty" | "error" | "nogl">(
@@ -87,6 +90,8 @@ export default function StructureViewer({
   const [range, setRange] = useState("");
   const [pair, setPair] = useState("");
   const [rmsd, setRmsd] = useState<number | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showFullscreenPanels, setShowFullscreenPanels] = useState(false);
 
   const mutationResidues = useMemo(
     () =>
@@ -113,6 +118,7 @@ export default function StructureViewer({
       return;
     }
     let disposed = false;
+    let observer: ResizeObserver | null = null;
     const container = containerRef.current;
     if (!container) return;
     void createViewer(container).then((plugin) => {
@@ -121,12 +127,40 @@ export default function StructureViewer({
         return;
       }
       pluginRef.current = plugin;
+      if (typeof ResizeObserver !== "undefined") {
+        observer = new ResizeObserver(() => {
+          requestAnimationFrame(() => plugin.handleResize());
+        });
+        observer.observe(container);
+      }
+      plugin.handleResize();
     });
     return () => {
       disposed = true;
+      observer?.disconnect();
       pluginRef.current?.dispose();
       pluginRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const syncFullscreen = () => {
+      const active = document.fullscreenElement === viewerRef.current;
+      setIsFullscreen(active);
+      if (!active) setShowFullscreenPanels(false);
+      requestAnimationFrame(() => pluginRef.current?.handleResize());
+    };
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (document.fullscreenElement === viewerRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+    setShowFullscreenPanels(false);
+    if (viewerRef.current?.requestFullscreen) await viewerRef.current.requestFullscreen();
   }, []);
 
   // Structure loading for the selected commit.
@@ -273,7 +307,28 @@ export default function StructureViewer({
   const mutated = new Set(mutationResidues);
 
   return (
-    <div className="viewer" data-testid="structure-3d" onKeyDown={onKeyDown} tabIndex={-1}>
+    <div
+      ref={viewerRef}
+      className={`viewer${isFullscreen && !showFullscreenPanels ? " viewer-chrome-hidden" : ""}`}
+      data-testid="structure-3d"
+      onKeyDown={onKeyDown}
+      tabIndex={-1}
+    >
+      <div className="viewer-fullscreen-actions">
+        {isFullscreen && (
+          <button
+            className="tab"
+            type="button"
+            aria-pressed={showFullscreenPanels}
+            onClick={() => setShowFullscreenPanels((shown) => !shown)}
+          >
+            {showFullscreenPanels ? "Hide panels" : "Show panels"}
+          </button>
+        )}
+        <button className="tab" type="button" onClick={() => void toggleFullscreen()}>
+          {isFullscreen ? "Exit full screen" : "Full screen"}
+        </button>
+      </div>
       <div className="pane-header">
         <div className="row">
           <strong style={{ fontSize: 12.5 }}>{pasted?.name || label || "no version selected"}</strong>
@@ -374,6 +429,12 @@ export default function StructureViewer({
           </div>
         )}
       </div>
+
+      {isFullscreen && showFullscreenPanels && fullscreenOverlay && (
+        <aside className="viewer-fullscreen-overlay" aria-label="full screen activity panel">
+          {fullscreenOverlay}
+        </aside>
+      )}
 
       {sequence && (
         <div className="seq-track" data-testid="sequence-track">

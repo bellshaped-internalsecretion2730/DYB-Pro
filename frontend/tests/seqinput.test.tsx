@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import SequenceLoader from "@/components/SequenceLoader";
 import { asFile, diffPositions, parseInput } from "@/lib/seqinput";
-import { residueOf } from "@/components/StructureViewer";
+import StructureViewer, { residueOf } from "@/components/StructureViewer";
 import { detectWebGL } from "@/lib/webgl";
 import { project } from "./fixtures";
 
@@ -91,6 +91,52 @@ describe("viewer guards", () => {
     expect(detectWebGL()).toMatchObject({ ok: false });
     getContext.mockImplementation(((id: string) => (id === "webgl" ? {} : null)) as never);
     expect(detectWebGL()).toMatchObject({ ok: true, webgl2: false });
+    getContext.mockRestore();
+  });
+
+  it("opens a clean full screen view and reveals the activity panel on demand", async () => {
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    let fullscreenElement: Element | null = null;
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      get: () => fullscreenElement,
+    });
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: vi.fn(function requestFullscreen(this: HTMLElement) {
+        fullscreenElement = this;
+        document.dispatchEvent(new Event("fullscreenchange"));
+        return Promise.resolve();
+      }),
+    });
+    Object.defineProperty(document, "exitFullscreen", {
+      configurable: true,
+      value: vi.fn(() => {
+        fullscreenElement = null;
+        document.dispatchEvent(new Event("fullscreenchange"));
+        return Promise.resolve();
+      }),
+    });
+
+    render(
+      <StructureViewer
+        commitId={null}
+        fullscreenOverlay={<div>Agent activity</div>}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+    expect(await screen.findByRole("button", { name: "Show panels" })).toBeInTheDocument();
+    expect(screen.queryByText("Agent activity")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show panels" }));
+    expect(screen.getByText("Agent activity")).toBeInTheDocument();
+    expect(screen.getByTestId("structure-3d")).not.toHaveClass("viewer-chrome-hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "Exit full screen" }));
+    expect(await screen.findByRole("button", { name: "Full screen" })).toBeInTheDocument();
+    expect(screen.queryByText("Agent activity")).toBeNull();
     getContext.mockRestore();
   });
 });

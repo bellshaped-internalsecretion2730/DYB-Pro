@@ -509,6 +509,7 @@ export default function Workspace() {
                   mutations={(selected?.mutations ?? []).filter((m): m is string => !!m)}
                   pasted={pasted}
                   marked={marked}
+                  fullscreenOverlay={<AgentSwarm cycle={cycle} agents={agents} />}
                 />
               ) : (
                 <ProteinViewer

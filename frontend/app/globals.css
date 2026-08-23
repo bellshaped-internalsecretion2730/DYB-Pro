@@ -102,6 +102,7 @@ header.top {
   grid-template-columns: 42px var(--left-w) minmax(0, 1fr) var(--right-w);
   height: calc(100vh - var(--top-h));
   min-height: 0;
+  overflow: hidden;
 }
 
 .pane {
@@ -119,14 +120,25 @@ header.top {
 
 .pane.right {
   border-left: 1px solid var(--line);
+  position: relative;
+  z-index: 3;
 }
 
 .center {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
   background: var(--bg);
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.center > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .pane-header {
@@ -349,16 +361,98 @@ button.tab[aria-selected="true"] {
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-height: 0;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  position: relative;
   border-bottom: 1px solid var(--line);
 }
 
+.viewer > .pane-header {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.viewer > .seq-track {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.viewer > .camera-bar {
+  grid-column: 1;
+  grid-row: 4;
+}
+
 .viewer-stage {
+  grid-column: 1;
+  grid-row: 2;
   position: relative;
   min-height: 0;
   background:
     radial-gradient(120% 90% at 50% 20%, rgba(79, 70, 229, 0.08), transparent 70%),
     var(--bg);
   overflow: hidden;
+  contain: layout paint;
+  isolation: isolate;
+}
+
+.viewer-fullscreen-actions {
+  grid-column: 1;
+  grid-row: 2;
+  position: relative;
+  align-self: start;
+  justify-self: end;
+  margin: 10px;
+  z-index: 22;
+  display: flex;
+  gap: 6px;
+}
+
+.viewer-fullscreen-actions .tab {
+  border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--raised) 92%, transparent);
+  box-shadow: 0 2px 10px rgba(15, 18, 22, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.viewer:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  border: 0;
+  background: var(--bg);
+}
+
+.viewer:fullscreen > .viewer-fullscreen-actions {
+  grid-row: 1;
+}
+
+.viewer:fullscreen.viewer-chrome-hidden {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.viewer:fullscreen.viewer-chrome-hidden > .viewer-stage,
+.viewer:fullscreen.viewer-chrome-hidden > .viewer-fullscreen-actions {
+  grid-row: 1;
+}
+
+.viewer:fullscreen.viewer-chrome-hidden > .pane-header,
+.viewer:fullscreen.viewer-chrome-hidden > .seq-track,
+.viewer:fullscreen.viewer-chrome-hidden > .camera-bar {
+  display: none;
+}
+
+.viewer-fullscreen-overlay {
+  position: absolute;
+  z-index: 20;
+  inset: 0 0 0 auto;
+  width: min(390px, 86vw);
+  overflow: auto;
+  padding-top: 46px;
+  border-left: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--raised) 94%, transparent);
+  box-shadow: -18px 0 40px rgba(15, 18, 22, 0.12);
+  backdrop-filter: blur(14px);
 }
 
 .viewer-stage svg {
@@ -417,6 +511,12 @@ button.tab[aria-selected="true"] {
   font-family: var(--font-mono);
   font-size: 10.5px;
   color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.camera-bar .row,
+.viewer > .pane-header {
+  flex-wrap: wrap;
 }
 
 /* -------------------------------------------------------- fold strip */
@@ -755,6 +855,16 @@ code,
   inset: 0;
   overflow: hidden;
   background: var(--panel-2);
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  contain: strict;
+}
+
+.structure-viewer canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .sr-only {
