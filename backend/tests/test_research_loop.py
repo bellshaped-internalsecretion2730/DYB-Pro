@@ -308,6 +308,37 @@ def test_full_research_pass_writes_immutable_events_and_a_proposal(
     assert campaign.knowledge_version >= 1
 
 
+def test_handoff_pass_opens_with_the_sitting_and_plans_for_the_handed_over_host(
+    db, campaign, project, root_commit, monkeypatch
+):
+    label = label_svc.create_label(
+        db, root_commit, kind="liability", name="exposed patch", residues=[10, 11], note="watch it",
+    )
+    seen: dict[str, str | None] = {}
+    build_plan = wetlab_loop.build_plan
+
+    def spy(*args, **kwargs):
+        seen["host"] = kwargs.get("host")
+        return build_plan(*args, **kwargs)
+
+    monkeypatch.setattr(wetlab_loop, "build_plan", spy)
+    daemon_svc.enqueue(
+        db, campaign, "handoff_requested", commit_id=root_commit.id, debounce_seconds=0,
+        payload={"host": "HEK293-F transient", "notes": "over to you", "label_ids": [label.id]},
+    )
+    db.commit()
+
+    outcomes = daemon_svc.process_pending(db, campaign, limit=1)
+    db.commit()
+    assert outcomes and outcomes[0]["status"] == "done"
+    # the scientist's host choice reaches the planner instead of the planner default
+    assert seen["host"] == "HEK293-F transient"
+    handoff = next(e for e in research_svc.events(db, campaign) if e.kind == "handoff")
+    assert handoff.payload["label_ids"] == [label.id]
+    assert "over to you" in handoff.summary
+    assert "HEK293-F transient" in handoff.summary
+
+
 def test_proposal_respects_active_site_labels(db, campaign, project, root_commit):
     protected = list(range(1, len(root_commit.sequence) + 1))
     db.add(

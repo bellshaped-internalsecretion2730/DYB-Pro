@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Commit, RiskReport, WetlabPlan, WetlabResult } from "@/lib/api";
 import MiniBars, { type MiniBar } from "@/components/MiniBars";
 import { fmt } from "@/lib/research";
@@ -24,6 +24,7 @@ export default function WetlabLoop({
   onPlan,
   onSimulate,
   onSubmit,
+  onContextChange,
 }: {
   commit: Commit | null;
   risk: RiskReport | null;
@@ -34,12 +35,18 @@ export default function WetlabLoop({
   onPlan: (host: string, maxAssays: number) => Promise<void>;
   onSimulate: (seed: number) => Promise<void>;
   onSubmit: (text: string, notes: string) => Promise<void>;
+  /** The host/notes the scientist picked here travel with an explicit swarm handoff. */
+  onContextChange?: (ctx: { host: string; notes: string }) => void;
 }) {
   const [host, setHost] = useState(HOSTS[0]);
   const [maxAssays, setMaxAssays] = useState(4);
   const [seed, setSeed] = useState(7);
   const [paste, setPaste] = useState("");
   const [notes, setNotes] = useState("");
+
+  useEffect(() => {
+    onContextChange?.({ host, notes });
+  }, [host, notes, onContextChange]);
 
   if (!commit) return <p className="muted">Select a version to run the wet-lab loop</p>;
 
