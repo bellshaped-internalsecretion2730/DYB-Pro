@@ -4,14 +4,28 @@ Everything the lab (or the simulator) reports enters Foldsmith through this skil
 units, applies documented pass/fail rules, and publishes the measurement-noise model that the
 simulator samples from and that the drift calculation divides by.
 
-Assay noise is taken from published repeatability data rather than invented:
+Two different kinds of number live in :data:`CANONICAL`, and every entry says which it is:
 
-* DSF melting temperature repeats to sd ~= 0.17 C within a plate (Hartmann et al. 2025, 6096
-  replicates of lysozyme), so 0.5 C is a fair inter-day sd;
-* the same protein-protein interaction measured by biosensor across laboratories spreads by
-  roughly half a log unit in KD (ABRF-MIRG'02 study), so 0.3 log10 is a fair assay sd;
-* shake-flask expression yield is medium/strain dependent at the tens-of-percent level, so a 30%
-  coefficient of variation is used.
+**Assay noise (``assay_sd``)** is anchored on published repeatability where such data exists:
+
+* intrinsic DSF repeats hen egg-white lysozyme to Tm = 74.6 C with sd 0.17 C over 6096 microwell
+  measurements at 0.5 mg/mL, pH 5.7, with a 10th-90th percentile spread below 0.5 C and 0.6%
+  outliers (Cohrs et al. 2025, doi:10.1021/acs.molpharmaceut.4c01496). That is *within-plate*
+  repeatability under one protocol, so the 0.5 C we publish is a deliberately wider inter-day,
+  inter-instrument figure - a policy widening, not the paper's number;
+* in a 22-participant biosensor study using identical reagents and protocol, ka and kd each spread
+  by ~15% between users (ka = (4.1 +- 0.6)e4 M-1 s-1, kd = (4.5 +- 0.6)e-5 s-1;
+  doi:10.1016/j.ab.2006.01.034), i.e. under 0.1 log10. Real submissions mix SPR and BLI, different
+  surfaces and different fits, so 0.3 log10 is again a conservative policy envelope;
+* shake-flask expression yield has no published cross-lab repeatability figure we could find, so
+  its 30% coefficient of variation is an explicitly uncalibrated placeholder.
+
+**Pass/fail rules (``pass``)** are *project gates*, not literature cutoffs. No paper states that a
+design must reach 45 C or 1 mg/L; Foldsmith does, and each entry carries ``pass_basis`` saying so.
+Where the practice is grounded in a review of methods - aggregate quantitation
+(doi:10.1007/s11095-010-0297-1), the consensus production pipeline behind >10,000 structural
+genomics targets (doi:10.1038/nmeth.f.202) - the review is cited for the *method*, never as the
+source of the number.
 """
 
 from __future__ import annotations
@@ -21,81 +35,209 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.skills import evidence
 from app.skills.base import Metric, SkillError, SkillSpec, collect, register
 
 VERSION = "1.0.0"
 
-CITATIONS = [
-    "Hartmann et al. 2025, Intrinsic differential scanning fluorimetry for protein stability "
-    "assessment in microwell plates (Anal Chem; PMC11881137) — Tm sd 0.17 C over 6096 replicates",
-    "ABRF-MIRG'02 study 2003, Assembly state, thermodynamic and kinetic analysis of an "
-    "enzyme/inhibitor interaction (J Biomol Tech 14:247) — inter-laboratory KD spread",
-    "Todd et al. 2005, The structural genomics experimental pipeline (J Mol Biol 348:1235) — "
-    "~45% stage-wise success from cloning through purification",
-    "Niesen, Berglund & Vedadi 2007, The use of differential scanning fluorimetry to detect "
-    "ligand interactions that promote protein stability (Nat Protoc 2:2212)",
-    "Ritchie et al. 2013, Analysis of size exclusion chromatography for aggregate quantitation "
-    "in therapeutic proteins (Bioanalysis) — HMW species acceptance practice",
-]
+EVIDENCE = evidence.register(
+    "skill.wetlab_metrics",
+    (
+        evidence.Evidence(
+            key="wetlab.dsf_repeatability",
+            claim="DSF melting temperature is highly repeatable within one plate",
+            applicability="hen egg-white lysozyme, 0.5 mg/mL, pH 5.7, intrinsic (label-free) DSF in "
+                          "microwell plates; 6096 measurements",
+            error="Tm = 74.6 C with sd 0.17 C; 10th-90th percentile spread below 0.5 C; 0.6% outliers",
+            calibration=evidence.CALIBRATED,
+            source="Cohrs et al. 2025, Intrinsic Differential Scanning Fluorimetry for Protein "
+                   "Stability Assessment in Microwell Plates (Mol Pharm)",
+            doi="10.1021/acs.molpharmaceut.4c01496",
+            reference_value="lysozyme Tm 74.6 C, sd 0.17 C over 6096 measurements",
+        ),
+        evidence.Evidence(
+            key="wetlab.tm_assay_sd",
+            claim="melting_temperature is published with an assay sd of 0.5 C (delta_tm 0.7 C)",
+            applicability="heterogeneous submissions: SYPRO Orange or intrinsic DSF, different days, "
+                          "instruments, buffers and operators",
+            error="within-plate repeatability is 0.17 C (wetlab.dsf_repeatability); we publish 0.5 C "
+                  "because inter-day and inter-instrument reproducibility is worse than repeatability "
+                  "and we would rather over-state noise than call drift on an artefact. The exact "
+                  "widening factor is a project choice, not a measurement",
+            calibration=evidence.POLICY,
+            source="Cohrs et al. 2025 (Mol Pharm) for the repeatability floor; Niesen, Berglund & "
+                   "Vedadi 2007, DSF protocol (Nat Protoc 2:2212, doi:10.1038/nprot.2007.321)",
+            doi="10.1021/acs.molpharmaceut.4c01496",
+        ),
+        evidence.Evidence(
+            key="wetlab.dsf_protocol",
+            claim="the DSF assay definition (first derivative of the unfolding curve) follows the "
+                  "standard protocol",
+            applicability="purified protein in a thermal-shift plate format, with or without ligand",
+            error="protocol reference; Tm is the parameter that survives orthogonal comparison, whereas "
+                  "unfolding enthalpy differs by 5-10% and heat capacity by 30-50% between nanoDSF and "
+                  "DSC (doi:10.1002/open.202400340) - which is why only Tm enters the schema",
+            calibration=evidence.ANCHORED,
+            source="Niesen, Berglund & Vedadi 2007, The use of differential scanning fluorimetry to "
+                   "detect ligand interactions that promote protein stability (Nat Protoc 2:2212)",
+            doi="10.1038/nprot.2007.321",
+        ),
+        evidence.Evidence(
+            key="wetlab.biosensor_kinetics",
+            claim="KD/kon/koff are reported with a 0.3 log10 assay sd",
+            applicability="1:1 kinetic titration by SPR or BLI. The reference study had 22 participants "
+                          "measuring one interaction with identical reagents and protocol",
+            error="between-user spread in that standardised study was ~15% on each rate constant "
+                  "(ka = (4.1 +- 0.6)e4 M-1 s-1, kd = (4.5 +- 0.6)e-5 s-1), i.e. below 0.1 log10 in KD. "
+                  "0.3 log10 is a project envelope covering mixed platforms, surface chemistries and "
+                  "fitting choices, and is therefore policy rather than a measured sd",
+            calibration=evidence.POLICY,
+            source="Katsamba et al. 2006, Kinetic analysis of a high-affinity antibody/antigen "
+                   "interaction performed by multiple Biacore users (Anal Biochem 352:208)",
+            doi="10.1016/j.ab.2006.01.034",
+            reference_value="ka (4.1 +- 0.6)e4 M-1 s-1 and kd (4.5 +- 0.6)e-5 s-1 across 22 users "
+                            "=> KD ~ 1.1 nM",
+        ),
+        evidence.Evidence(
+            key="wetlab.aggregate_quantitation",
+            claim="aggregation is quantified as the high-molecular-weight peak area by analytical SEC",
+            applicability="protein therapeutics; the review surveys SEC, AUC, light scattering and their "
+                          "biases",
+            error="method reference only. SEC under-reports large or reversible aggregates, so the 1% "
+                  "absolute sd we publish is a working figure and the 5% pass gate is a project "
+                  "threshold, not a specification from this source",
+            calibration=evidence.ANCHORED,
+            source="den Engelsman et al. 2011, Strategies for the assessment of protein aggregates in "
+                   "pharmaceutical biotech product development (Pharm Res 28:920)",
+            doi="10.1007/s11095-010-0297-1",
+        ),
+        evidence.Evidence(
+            key="wetlab.production_pipeline",
+            claim="the expression/solubility/purification metric set mirrors a standard production "
+                  "pipeline",
+            applicability="consensus E. coli production strategy distilled from more than 10,000 "
+                          "structural genomics targets",
+            error="the pipeline is the source of the *stages we measure*, not of any number: no "
+                  "cross-laboratory sd for shake-flask yield or densitometric soluble fraction is "
+                  "published there, so those sds remain uncalibrated placeholders",
+            calibration=evidence.ANCHORED,
+            source="Structural Genomics Consortium et al. 2008, Protein production and purification "
+                   "(Nat Methods 5:135)",
+            doi="10.1038/nmeth.f.202",
+            reference_value="consensus strategy derived from >10,000 proteins",
+        ),
+        evidence.Evidence(
+            key="wetlab.expression_noise",
+            claim="expression_yield carries a 30% relative sd and soluble_fraction 10 percentage points",
+            applicability="shake-flask expression with IMAC purification and A280 quantification; "
+                          "SDS-PAGE densitometry for the soluble fraction",
+            error="no empirical calibration: we found no published cross-laboratory repeatability study "
+                  "for either readout, so both figures are order-of-magnitude placeholders that make "
+                  "the noise model usable and are flagged as uncalibrated wherever they are consumed",
+            calibration=evidence.PROXY,
+        ),
+        evidence.Evidence(
+            key="wetlab.pass_gates",
+            claim="every pass/fail rule in the canonical schema is a Foldsmith gate",
+            applicability="pre-wetlab triage of designed constructs inside this platform",
+            error="no literature cutoff exists for 'a design worth making': the >=1 mg/L, >=30% soluble, "
+                  ">=45 C, <=5% HMW, >=90% purity, >=25% recovery, >=50% activity and <=1000 nM gates "
+                  "are project policy, are overridable per campaign, and must never be presented as "
+                  "published acceptance criteria",
+            calibration=evidence.POLICY,
+        ),
+    ),
+)
 
-# name -> (canonical unit, higher_is_better, assay sd, sd kind, pass rule)
+CITATIONS = evidence.citations("skill.wetlab_metrics")
+
+
+def cite(*keys: str) -> tuple[str, ...]:
+    return tuple(evidence.record("skill.wetlab_metrics", key).citation() for key in keys)
+
+
+# Literature reference values pinned by tests/test_evidence.py.
+DSF_LYSOZYME_TM_C = 74.6
+DSF_WITHIN_PLATE_TM_SD_C = 0.17
+DSF_LYSOZYME_REPLICATES = 6096
+SPR_REFERENCE_KON_M1S1 = 4.1e4
+SPR_REFERENCE_KOFF_S1 = 4.5e-5
+SPR_REFERENCE_USERS = 22
+
+# name -> canonical unit, higher_is_better, assay sd + its evidence, pass rule + its basis.
+# `sd_evidence` and `pass_basis` are mandatory: tests/test_evidence.py rejects a metric that cannot
+# say where its noise figure came from or that its gate is a project policy.
 CANONICAL: dict[str, dict[str, Any]] = {
     "expression": {
         "unit": "bool", "higher_is_better": True, "assay_sd": 0.0, "sd_kind": "bernoulli",
-        "pass": {"equals": True},
+        "pass": {"equals": True}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.production_pipeline",
         "assay": "small-scale expression test (SDS-PAGE / dot blot)",
     },
     "expression_yield": {
         "unit": "mg/L", "higher_is_better": True, "assay_sd": 0.30, "sd_kind": "relative",
-        "pass": {"min": 1.0},
+        "pass": {"min": 1.0}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.expression_noise",
         "assay": "shake-flask expression and IMAC purification, A280 quantification",
     },
     "soluble_fraction": {
         "unit": "%", "higher_is_better": True, "assay_sd": 10.0, "sd_kind": "absolute",
-        "pass": {"min": 30.0},
+        "pass": {"min": 30.0}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.expression_noise",
         "assay": "soluble vs total lysate fraction by SDS-PAGE densitometry",
     },
     "melting_temperature": {
         "unit": "C", "higher_is_better": True, "assay_sd": 0.5, "sd_kind": "absolute",
-        "pass": {"min": 45.0},
+        "pass": {"min": 45.0}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.tm_assay_sd",
         "assay": "differential scanning fluorimetry (SYPRO Orange or intrinsic)",
     },
     "delta_tm": {
         "unit": "C", "higher_is_better": True, "assay_sd": 0.7, "sd_kind": "absolute",
-        "pass": {"min": 0.0},
+        "pass": {"min": 0.0}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.tm_assay_sd",
         "assay": "DSF of design vs parent on the same plate",
     },
     "kd": {
         "unit": "nM", "higher_is_better": False, "assay_sd": 0.3, "sd_kind": "log10",
-        "pass": {"max": 1000.0},
+        "pass": {"max": 1000.0}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.biosensor_kinetics",
         "assay": "BLI or SPR kinetic titration, 1:1 Langmuir fit",
     },
     "kon": {
         "unit": "1/M/s", "higher_is_better": True, "assay_sd": 0.3, "sd_kind": "log10",
-        "pass": {}, "assay": "BLI/SPR association phase fit",
+        "pass": {}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.biosensor_kinetics",
+        "assay": "BLI/SPR association phase fit",
     },
     "koff": {
         "unit": "1/s", "higher_is_better": False, "assay_sd": 0.3, "sd_kind": "log10",
-        "pass": {}, "assay": "BLI/SPR dissociation phase fit",
+        "pass": {}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.biosensor_kinetics",
+        "assay": "BLI/SPR dissociation phase fit",
     },
     "activity": {
         "unit": "% of control", "higher_is_better": True, "assay_sd": 15.0, "sd_kind": "absolute",
-        "pass": {"min": 50.0},
+        "pass": {"min": 50.0}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.expression_noise",
         "assay": "functional assay normalised to the wild-type control",
     },
     "aggregation_hmw": {
         "unit": "%", "higher_is_better": False, "assay_sd": 1.0, "sd_kind": "absolute",
-        "pass": {"max": 5.0},
+        "pass": {"max": 5.0}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.aggregate_quantitation",
         "assay": "analytical SEC, high-molecular-weight peak area",
     },
     "purity": {
         "unit": "%", "higher_is_better": True, "assay_sd": 3.0, "sd_kind": "absolute",
-        "pass": {"min": 90.0},
+        "pass": {"min": 90.0}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.aggregate_quantitation",
         "assay": "SDS-PAGE or analytical SEC main-peak purity",
     },
     "purification_recovery": {
         "unit": "%", "higher_is_better": True, "assay_sd": 12.0, "sd_kind": "absolute",
-        "pass": {"min": 25.0},
+        "pass": {"min": 25.0}, "pass_basis": evidence.POLICY,
+        "sd_evidence": "wetlab.production_pipeline",
         "assay": "recovered mass / lysate mass across the purification train",
     },
 }
@@ -165,6 +307,9 @@ class NormalizedMeasurement(BaseModel):
     assay: str
     assay_sd: float
     sd_kind: str
+    sd_source: str = Field(default="", description="evidence key behind assay_sd")
+    sd_calibration: str = Field(default="", description="calibration status of assay_sd")
+    rule_basis: str = Field(default="", description="basis of the pass/fail rule; gates are policy")
     replicate_sd: float | None = None
     passed: bool | None = None
     rule: str = ""
@@ -240,8 +385,18 @@ def evaluate(metric: str, value: float | bool | None) -> tuple[bool | None, str]
     return None, "no acceptance rule defined"
 
 
+def sd_evidence(metric: str) -> evidence.Evidence:
+    """The evidence record behind this metric's assay sd."""
+    spec = CANONICAL[canonical_name(metric)]
+    return evidence.record("skill.wetlab_metrics", spec["sd_evidence"])
+
+
 def noise_sd(metric: str, value: float | None = None) -> float:
-    """Assay standard deviation in canonical units for this metric at this magnitude."""
+    """Assay standard deviation in canonical units for this metric at this magnitude.
+
+    The figures come from :data:`CANONICAL`; use :func:`sd_evidence` to find out whether a given one
+    is literature-calibrated, a conservative policy widening, or an uncalibrated placeholder.
+    """
     spec = CANONICAL[canonical_name(metric)]
     kind, sd = spec["sd_kind"], float(spec["assay_sd"])
     if kind == "absolute":
@@ -287,6 +442,9 @@ def run(payload: WetlabMetricsInput) -> WetlabMetricsOutput:
                 assay=spec["assay"],
                 assay_sd=round(noise_sd(name, value if isinstance(value, int | float) else None), 4),
                 sd_kind=spec["sd_kind"],
+                sd_source=spec["sd_evidence"],
+                sd_calibration=sd_evidence(name).calibration,
+                rule_basis=spec["pass_basis"],
                 replicate_sd=raw.replicate_sd,
                 passed=passed,
                 rule=rule,
@@ -302,7 +460,9 @@ def run(payload: WetlabMetricsInput) -> WetlabMetricsOutput:
             Metric("acceptance_rate", round(sum(1 for r in decided if r.passed) / len(decided), 4)
                    if decided else 0.0, "fraction",
                    "documented pass/fail rules per metric", "skill.wetlab_metrics",
-                   citations=(CITATIONS[2],)),
+                   citations=cite("wetlab.pass_gates", "wetlab.production_pipeline"),
+                   notes="the gates are Foldsmith policy, overridable per campaign; they are not "
+                         "published acceptance criteria"),
         ]
     )
     return WetlabMetricsOutput(

@@ -3,31 +3,116 @@
 A design that binds beautifully but cannot be made is not a candidate. This skill scores
 developability, flags immunogenicity risk, and makes the trade-off explicit: it reports where a
 candidate sits on the affinity/developability Pareto front and what it would cost to accept it.
+
+Provenance (full records in :data:`EVIDENCE`):
+
+* **the flag-based framing** is taken from the clinical-stage antibody literature: Jain et al. 2017
+  (doi:10.1073/pnas.1616408114) measured 12 biophysical assays on 137 clinical-stage antibodies and
+  Raybould et al. 2019 (doi:10.1073/pnas.1810576116) turned those distributions into five
+  computational guidelines. Both are *antibody* populations; our inputs are arbitrary designed
+  proteins, so their thresholds are used as framing, not as transferred cutoffs.
+* **the composite index and its weights are uncalibrated project policy.** No paper publishes this
+  composite. The weights are flat-by-design and never fitted, and the index is dimensionless: it
+  ranks designs of the same protein and nothing else.
+* **developability_sd = 0.18** is a policy ranking band, not a measured sd. It is chosen wide
+  because the strongest input - sequence-only solubility - is itself weak: SoluProt reaches 58.5%
+  accuracy and AUC 0.62 on its independent test set (doi:10.1093/bioinformatics/btaa1102).
+* **immunogenicity** is an allele-agnostic MHC-II anchor-motif count per 100 aa with no calibration.
+  A real epitope call needs an allele-aware predictor such as NetMHCIIpan-4.0
+  (doi:10.1093/nar/gkaa379); the default limit of 6 cores/100 aa is a project screening policy.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.skills import evidence
 from app.skills.base import Metric, SkillSpec, collect, register
 from app.toolkit import developability as dev
 from app.toolkit import sequence as seqlib
 
 VERSION = "1.0.0"
 
-CITATIONS = [
-    "Jain et al. 2017, Biophysical properties of the clinical-stage antibody landscape "
-    "(PNAS 114:944) — developability flag thresholds from clinical-stage molecules",
-    "Raybould et al. 2019, Five computational developability guidelines for therapeutic antibody "
-    "profiling (PNAS 116:4025)",
-    "Hon et al. 2021, SoluProt: prediction of soluble protein expression in Escherichia coli "
-    "(Bioinformatics 37:23) — sequence-only solubility prediction reaches ~58.5% accuracy, AUC 0.62",
-    "Sormanni, Aprile & Vendruscolo 2015, The CamSol method of rational design of protein mutants "
-    "with enhanced solubility (J Mol Biol 427:478)",
-]
+EVIDENCE = evidence.register(
+    "skill.drug_discovery",
+    (
+        evidence.Evidence(
+            key="drug_discovery.developability_flags",
+            claim="developability is scored as a set of roughly equally disqualifying flags",
+            applicability="137 clinical-stage therapeutic antibodies profiled in 12 biophysical assays; "
+                          "the five computational guidelines derived from those distributions",
+            error="the source distributions are antibody-specific and the guidelines are pass/fail "
+                  "percentile flags, not a scored index; transferring them to non-antibody designs has "
+                  "no published validation",
+            calibration=evidence.ANCHORED,
+            source="Jain et al. 2017, Biophysical properties of the clinical-stage antibody landscape "
+                   "(PNAS 114:944); Raybould et al. 2019, Five computational developability guidelines "
+                   "for therapeutic antibody profiling (PNAS 116:4025, doi:10.1073/pnas.1810576116)",
+            doi="10.1073/pnas.1616408114",
+            reference_value="137 clinical-stage antibodies, 12 assays",
+        ),
+        evidence.Evidence(
+            key="drug_discovery.composite_weights",
+            claim="the 0-1 developability index is a weighted mean of five sub-scores",
+            applicability="ranking designs of the same protein within one campaign",
+            error="uncalibrated: the weights were chosen by hand, never fitted against expression or "
+                  "manufacturability outcomes, and the index has no physical unit. It must not be read "
+                  "as a probability of success",
+            calibration=evidence.PROXY,
+        ),
+        evidence.Evidence(
+            key="drug_discovery.developability_sd",
+            claim="the composite index is published with sd 0.18 and the ranking layer respects it",
+            applicability="E. coli soluble-expression prediction from sequence, as an upper bound on how "
+                          "good the composite's strongest input can be",
+            error="SoluProt reaches 58.5% accuracy and AUC 0.62 on its independent test set, so a "
+                  "sequence-only solubility term is barely better than a coin flip; 0.18 on a 0-1 scale "
+                  "is a deliberately wide policy band and not a measured standard deviation of this "
+                  "composite (no such measurement exists)",
+            calibration=evidence.POLICY,
+            source="Hon et al. 2021, SoluProt: prediction of soluble protein expression in Escherichia "
+                   "coli (Bioinformatics 37:23)",
+            doi="10.1093/bioinformatics/btaa1102",
+            reference_value="58.5% accuracy, AUC 0.62 on the independent test set",
+        ),
+        evidence.Evidence(
+            key="drug_discovery.solubility_ingredients",
+            claim="the solubility sub-score combines charge density, hydropathy and aggregation load",
+            applicability="the ingredients follow a published solubility-design method; the published "
+                          "method predicts *relative* solubility changes on mutation",
+            error="uncalibrated: our weights are not CamSol's fitted coefficients, so the sub-score "
+                  "is in arbitrary units, cannot be compared with a CamSol score and predicts no "
+                  "mg/mL",
+            calibration=evidence.PROXY,
+            source="Sormanni, Aprile & Vendruscolo 2015, The CamSol method of rational design of protein "
+                   "mutants with enhanced solubility (J Mol Biol 427:478)",
+            doi="10.1016/j.jmb.2014.09.026",
+        ),
+        evidence.Evidence(
+            key="drug_discovery.immunogenicity_limit",
+            claim="candidates are flagged above 6 MHC-II-like binding cores per 100 aa",
+            applicability="internal screening of designs of the same protein",
+            error="uncalibrated in both directions: the count is allele-agnostic with no binding "
+                  "affinity or HLA frequency weighting, and the 6/100aa limit is a project policy. An "
+                  "allele-aware predictor (NetMHCIIpan-4.0, trained on binding affinity and eluted "
+                  "ligand data) is required before any (non-)immunogenicity claim",
+            calibration=evidence.POLICY,
+            source="Reynisson et al. 2020, NetMHCpan-4.1 and NetMHCIIpan-4.0 (Nucleic Acids Res 48:W449)",
+            doi="10.1093/nar/gkaa379",
+        ),
+    ),
+)
 
-# Weights of the composite developability index. Deliberately flat: published guideline sets treat
-# their flags as roughly equally disqualifying rather than finely weighted.
+CITATIONS = evidence.citations("skill.drug_discovery")
+
+
+def cite(*keys: str) -> tuple[str, ...]:
+    return tuple(evidence.record("skill.drug_discovery", key).citation() for key in keys)
+
+
+# Weights of the composite developability index. Deliberately flat and *never fitted*: published
+# guideline sets treat their flags as roughly equally disqualifying rather than finely weighted.
+# See EVIDENCE["drug_discovery.composite_weights"] - uncalibrated proxy.
 WEIGHTS = {
     "solubility": 0.30,
     "aggregation": 0.25,
@@ -35,8 +120,13 @@ WEIGHTS = {
     "stability": 0.15,
     "liability": 0.10,
 }
-# Sequence-only solubility prediction is weak (AUC ~0.62), so the index carries a wide error bar.
+# Policy ranking band, not a measured sd (drug_discovery.developability_sd). Kept wide because the
+# composite's strongest input is sequence-only solubility, whose published AUC is 0.62.
 DEVELOPABILITY_SD = 0.18
+# Literature reference values pinned by tests/test_evidence.py.
+SOLUPROT_ACCURACY = 0.585
+SOLUPROT_AUC = 0.62
+JAIN_CLINICAL_ANTIBODIES = 137
 
 
 class Candidate(BaseModel):
@@ -80,7 +170,14 @@ def _clip(value: float) -> float:
 
 
 def developability_index(profile: dict) -> tuple[float, dict[str, float]]:
-    """0-1 composite where 1 is 'boringly easy to make'."""
+    """0-1 composite where 1 is 'boringly easy to make'. Uncalibrated by construction.
+
+    The five sub-scores follow the flag families used by the clinical-stage antibody developability
+    literature (Jain et al. 2017, doi:10.1073/pnas.1616408114; Raybould et al. 2019,
+    doi:10.1073/pnas.1810576116), but the normalisation constants and weights here were chosen by
+    hand and never fitted to expression or manufacturability outcomes. The number ranks designs of
+    the same protein; it is not a probability of developability and has no unit.
+    """
     solubility = _clip((profile["solubility"]["value"] + 1.0) / 2.0)
     aggregation = _clip(1.0 - profile["aggregation"]["value"] / 0.4)
     immunogenicity = _clip(1.0 - profile["immunogenicity"]["value"] / 10.0)
@@ -168,7 +265,11 @@ def run(payload: DrugDiscoveryInput) -> DrugDiscoveryOutput:
             Metric("developability_index_best", best_dev, "index 0-1",
                    "weighted solubility/aggregation/immunogenicity/stability/liability composite",
                    "skill.drug_discovery", sd=DEVELOPABILITY_SD,
-                   citations=(CITATIONS[0], CITATIONS[1], CITATIONS[2])),
+                   citations=cite("drug_discovery.developability_flags",
+                                  "drug_discovery.composite_weights",
+                                  "drug_discovery.developability_sd"),
+                   notes="unitless, uncalibrated composite with hand-chosen weights; the sd is a policy "
+                         "band set by the AUC 0.62 ceiling of sequence-only solubility prediction"),
             Metric("pareto_front_size", float(sum(1 for r in rows if r.pareto_optimal)), "count",
                    "non-dominated candidates on the affinity/developability plane",
                    "skill.drug_discovery"),

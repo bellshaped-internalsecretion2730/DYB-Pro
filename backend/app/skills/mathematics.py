@@ -8,7 +8,11 @@ The daemon needs four numerically honest primitives:
 * rank candidates by information gained per dollar rather than by raw score.
 
 Everything is closed-form, deterministic and dependency-free, so a research event can be replayed
-years later and produce the identical number.
+years later and produce the identical number. Unlike the biology skills, these primitives are
+analytically exact rather than empirically calibrated: there is no benchmark error to quote, only
+the assumptions of each formula (linearity, normality, homoscedasticity), which the evidence records
+below state. The exception is the exploration bonus in ``rank_under_cost``, which is a hand-tuned
+heuristic in the spirit of UCB1 (doi:10.1023/A:1013689704352) and carries no regret guarantee.
 """
 
 from __future__ import annotations
@@ -18,17 +22,76 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.skills import evidence
 from app.skills.base import Metric, SkillSpec, collect, register
 
 VERSION = "1.0.0"
 
-CITATIONS = [
-    "Taylor 1997, An Introduction to Error Analysis, 2nd ed. (linear uncertainty propagation)",
-    "Gelman et al. 2013, Bayesian Data Analysis, 3rd ed., ch.2 (normal-normal conjugate update)",
-    "Auer, Cesa-Bianchi & Fischer 2002, Finite-time analysis of the multiarmed bandit problem "
-    "(Machine Learning 47:235) — upper-confidence selection",
-    "Settles 2012, Active Learning (Synthesis Lectures on AI and ML 6:1) — value of information",
-]
+EVIDENCE = evidence.register(
+    "skill.math",
+    (
+        evidence.Evidence(
+            key="math.uncertainty_propagation",
+            claim="the objective sd is the root sum of squares of weighted term sds",
+            applicability="independent, approximately normal terms combined linearly; correlated "
+                          "inputs are not handled and would need a covariance matrix",
+            error="exact for a linear combination of independent variables; first-order only if a "
+                  "caller linearises a non-linear objective before calling",
+            calibration=evidence.EXACT,
+            source="Taylor 1997, An Introduction to Error Analysis, 2nd ed. (linear uncertainty "
+                   "propagation)",
+        ),
+        evidence.Evidence(
+            key="math.bayesian_update",
+            claim="prediction bias is updated with the normal-normal conjugate posterior",
+            applicability="a normal prior with a known-variance normal likelihood; posterior "
+                          "precision is the sum of prior and observation precisions",
+            error="exact under those assumptions: the posterior sd is analytic, not estimated. A "
+                  "mis-specified observation sd propagates directly into the posterior",
+            calibration=evidence.EXACT,
+            source="Gelman et al. 2013, Bayesian Data Analysis, 3rd ed., ch.2 (normal-normal "
+                   "conjugate update)",
+        ),
+        evidence.Evidence(
+            key="math.calibration_fit",
+            claim="predicted -> measured drift is an ordinary least-squares line with residual spread",
+            applicability="at least two pairs with homoscedastic residuals; the residual sd is the "
+                          "sample spread about the fit, so it means little for very few pairs",
+            error="the fit is exact; its usefulness is limited by n and no cross-validation is done",
+            calibration=evidence.EXACT,
+            source="ordinary least squares (closed form)",
+        ),
+        evidence.Evidence(
+            key="math.rank_under_cost",
+            claim="candidates are ranked by (value + exploration * sd) per dollar",
+            applicability="choosing the next experiment among candidates with comparable value "
+                          "units; the upper-confidence form follows the UCB1 idea",
+            error="uncalibrated: UCB1's regret bound applies to its own log(t)/n bonus on bounded "
+                  "rewards, not to this cost-divided variant, so no regret guarantee transfers and "
+                  "the exploration coefficient is a tuning knob",
+            calibration=evidence.ANCHORED,
+            source="Auer, Cesa-Bianchi & Fischer 2002, Finite-time analysis of the multiarmed bandit "
+                   "problem (Machine Learning 47:235)",
+            doi="10.1023/A:1013689704352",
+        ),
+        evidence.Evidence(
+            key="math.value_of_information",
+            claim="uncertainty is treated as information worth paying for, so sd enters the utility",
+            applicability="experiment selection when measurements cost money and reduce uncertainty",
+            error="no empirical calibration: the exchange rate between a unit of sd and a dollar is "
+                  "a project choice, and this skill neither estimates nor optimises information gain",
+            calibration=evidence.PROXY,
+            source="Settles 2012, Active Learning (Synthesis Lectures on AI and ML 6:1)",
+        ),
+    ),
+)
+
+CITATIONS = evidence.citations("skill.math")
+
+
+def cite(*keys: str) -> tuple[str, ...]:
+    return tuple(evidence.record("skill.math", key).citation() for key in keys)
+
 
 Operation = Literal[
     "propagate_uncertainty",
@@ -193,7 +256,7 @@ def run(payload: MathInput) -> MathOutput:
         metrics = collect(
             [
                 Metric("objective_value", result["value"], "score", result["method"], "skill.math",
-                       sd=result["sd"], citations=(CITATIONS[0],)),
+                       sd=result["sd"], citations=cite("math.uncertainty_propagation")),
             ]
         )
     elif payload.operation == "bayesian_update":
@@ -203,7 +266,8 @@ def run(payload: MathInput) -> MathOutput:
         metrics = collect(
             [
                 Metric("posterior_bias", result["posterior_mean"], "metric units", result["method"],
-                       "skill.math", sd=result["posterior_sd"], citations=(CITATIONS[1],)),
+                       "skill.math", sd=result["posterior_sd"],
+                       citations=cite("math.bayesian_update")),
             ]
         )
     elif payload.operation == "calibrate":
@@ -221,7 +285,8 @@ def run(payload: MathInput) -> MathOutput:
         metrics = collect(
             [
                 Metric("best_utility_per_usd", best["utility_per_usd"], "score/USD", result["method"],
-                       "skill.math", citations=(CITATIONS[2], CITATIONS[3])),
+                       "skill.math",
+                       citations=cite("math.rank_under_cost", "math.value_of_information")),
             ]
         )
     else:
