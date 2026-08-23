@@ -85,6 +85,16 @@ test.describe("demo path", () => {
     await page.getByTestId("label-create").click();
     await expect(daemonPane).toContainText(/label_changed/, { timeout: 30_000 });
 
+    // end of the sitting: one explicit handoff bundles it into a real queued swarm task
+    await page.getByTestId("daemon-handoff").click();
+    const receipt = page.getByTestId("handoff-receipt");
+    await expect(receipt).toContainText(/handoff_requested is (queued|coalesced)/, {
+      timeout: 30_000,
+    });
+    // the provider is stated as it is; no Devin session is claimed unless one exists
+    await expect(receipt).toContainText(/Provider (devin|local-simulation|unavailable)/);
+    await expect(daemonPane).toContainText(/handoff_requested/);
+
     // ...and running the due work clears it, writing new research events
     await page.getByTestId("daemon-refresh").click();
     await page.getByTestId("daemon-tick").click();

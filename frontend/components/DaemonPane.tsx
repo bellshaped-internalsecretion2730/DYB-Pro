@@ -9,11 +9,15 @@ export default function DaemonPane({
   busy,
   onRefresh,
   onTick,
+  onHandoff,
+  handoffContext,
 }: {
   daemon: LabDaemonStatus | null;
   busy: string | null;
   onRefresh: () => void;
   onTick: () => void;
+  onHandoff: () => void;
+  handoffContext: { labelCount: number; host: string; notes: string; ready: boolean };
 }) {
   if (!daemon) return <p className="muted">Pick a campaign to see the Research Daemon</p>;
   const degraded = daemon.status === "degraded" || daemon.status === "error";
@@ -70,6 +74,18 @@ export default function DaemonPane({
         </button>
         <button type="button" data-testid="daemon-tick" onClick={onTick} disabled={busy === "tick"}>
           {busy === "tick" ? "Daemon working…" : "Run due work now"}
+        </button>
+        <button
+          type="button"
+          className="tip"
+          data-testid="daemon-handoff"
+          data-tip={`Bundles this sitting — ${handoffContext.labelCount} new label(s), host ${
+            handoffContext.host || "planner default"
+          }${handoffContext.notes ? `, notes "${handoffContext.notes}"` : ""} — into one autonomous swarm run.`}
+          onClick={onHandoff}
+          disabled={!handoffContext.ready || busy === "handoff"}
+        >
+          {busy === "handoff" ? "Handing off…" : "Hand off to swarm"}
         </button>
       </div>
       <table>

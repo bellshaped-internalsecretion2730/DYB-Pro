@@ -165,6 +165,72 @@ def test_daemon_refresh_tick_and_research_trail(client, demo_project_id):
     assert daemon.json()["heartbeat_at"]
 
 
+def test_handoff_bundles_the_sitting_into_one_swarm_task(client, demo_project_id):
+    commit_id = _first_commit(client, demo_project_id)
+    label = client.post(
+        f"/api/lab/commits/{commit_id}/labels",
+        json={"kind": "mutation_intent", "name": "loop swap", "residues": [5, 6],
+              "note": "try a shorter loop"},
+        headers=headers("scientist"),
+    )
+    assert label.status_code == 201
+    label_id = label.json()["label"]["id"]
+
+    res = client.post(
+        f"/api/lab/projects/{demo_project_id}/research/handoff",
+        json={
+            "commit_id": commit_id,
+            "host": "E. coli SHuffle T7",
+            "notes": "over to you: keep the active site intact",
+            "label_ids": [label_id, "not-a-label"],
+        },
+        headers=headers("scientist"),
+    )
+    assert res.status_code == 202
+    body = res.json()
+    assert body["daemon_task"]["kind"] == "handoff_requested"
+    assert body["daemon_task"]["status"] == "queued"
+    assert body["handoff"]["label_ids"] == [label_id]
+    # a label id that is not on this version is reported, never silently handed over as context
+    assert body["handoff"]["unknown_label_ids"] == ["not-a-label"]
+    assert body["handoff"]["host"] == "E. coli SHuffle T7"
+    # the provider is reported honestly: no Devin session is invented when Devin is unconfigured
+    assert body["provider"]["provider"] in {"devin", "local-simulation", None}
+    if not body["provider"]["devin_configured"]:
+        assert body["devin_session_url"] is None
+    assert any(t["kind"] == "handoff_requested" for t in body["daemon"]["tasks"])
+
+    events = client.get(
+        f"/api/lab/projects/{demo_project_id}/research/events", headers=headers("viewer")
+    ).json()
+    handoff_event = next(e for e in events if e["kind"] == "handoff")
+    assert handoff_event["payload"]["label_ids"] == [label_id]
+    assert handoff_event["payload"]["daemon_task_id"] == body["daemon_task"]["id"]
+
+    # a second press reuses the debounce window instead of launching a second swarm
+    again = client.post(
+        f"/api/lab/projects/{demo_project_id}/research/handoff",
+        json={"commit_id": commit_id, "host": "E. coli SHuffle T7"},
+        headers=headers("scientist"),
+    )
+    assert again.status_code == 202
+    assert again.json()["daemon_task"]["status"] == "coalesced"
+    assert again.json()["daemon_task"]["coalesced_into"] == body["daemon_task"]["id"]
+
+
+def test_handoff_is_scientist_only_and_needs_a_real_project(client, demo_project_id):
+    forbidden = client.post(
+        f"/api/lab/projects/{demo_project_id}/research/handoff",
+        json={},
+        headers=headers("viewer"),
+    )
+    assert forbidden.status_code == 403
+    missing = client.post(
+        "/api/lab/projects/nope/research/handoff", json={}, headers=headers("scientist")
+    )
+    assert missing.status_code == 404
+
+
 def test_drift_learned_and_proposal(client, demo_project_id):
     drift = client.get(f"/api/lab/projects/{demo_project_id}/research/drift", headers=headers("viewer"))
     assert drift.status_code == 200

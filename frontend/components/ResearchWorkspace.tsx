@@ -15,6 +15,7 @@ import {
   type Paper,
   type Proposal,
   type RiskReport,
+  type SwarmHandoff,
   type WetlabPlan,
   type WetlabResult,
 } from "@/lib/api";
@@ -38,6 +39,13 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
   const [unknownMetrics, setUnknownMetrics] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // What this sitting produced so far, so one explicit action can hand it to the swarm.
+  const [sitting, setSitting] = useState<{ labelIds: string[]; host: string; notes: string }>({
+    labelIds: [],
+    host: "",
+    notes: "",
+  });
+  const [handoff, setHandoff] = useState<SwarmHandoff | null>(null);
 
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
 
@@ -81,8 +89,15 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
 
   useEffect(() => {
     if (!commitId) return;
+    // labels "added this sitting" belong to the version that was on screen
+    setSitting((s) => ({ ...s, labelIds: [] }));
+    setHandoff(null);
     loadCommit(commitId).catch(fail);
   }, [commitId, loadCommit]);
+
+  const rememberContext = useCallback((ctx: { host: string; notes: string }) => {
+    setSitting((s) => (s.host === ctx.host && s.notes === ctx.notes ? s : { ...s, ...ctx }));
+  }, []);
 
   // keep the daemon pane live without hammering the whole campaign query
   useEffect(() => {
@@ -196,7 +211,44 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
               await reload();
             })
           }
+          handoffContext={{
+            labelCount: sitting.labelIds.length,
+            host: sitting.host,
+            notes: sitting.notes,
+            ready: Boolean(commitId) && busy === null,
+          }}
+          onHandoff={() =>
+            act("handoff", async () => {
+              const res = await research.handoff(projectId, {
+                commit_id: commitId || undefined,
+                host: sitting.host,
+                notes: sitting.notes,
+                label_ids: sitting.labelIds,
+              });
+              setDaemon(res.daemon);
+              setHandoff(res);
+            })
+          }
         />
+        {handoff && (
+          <p className="hint" data-testid="handoff-receipt" style={{ marginTop: 8 }}>
+            Handed off {handoff.handoff.commit_label || handoff.handoff.commit_id.slice(0, 8)} to the
+            swarm: task {handoff.daemon_task.kind} is {handoff.daemon_task.status} with{" "}
+            {handoff.handoff.label_ids.length} label(s) this sitting, host{" "}
+            {handoff.handoff.host || "planner default"}. Provider{" "}
+            {handoff.provider.provider || "unavailable"}
+            {handoff.devin_session_url ? (
+              <>
+                {" · "}
+                <a href={handoff.devin_session_url} target="_blank" rel="noreferrer">
+                  Devin session
+                </a>
+              </>
+            ) : (
+              " · no Devin session yet"
+            )}
+          </p>
+        )}
       </section>
 
       <section className="panel">
@@ -218,6 +270,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
               if (!commitId) return;
               const res = await research.addLabel(commitId, body);
               setDaemon(res.daemon);
+              setSitting((s) => ({ ...s, labelIds: [...s.labelIds, res.label.id] }));
               setLabels(await research.labels(commitId));
             });
           }}
@@ -248,6 +301,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
           </span>
         </h2>
         <WetlabLoop
+          onContextChange={rememberContext}
           commit={commit}
           risk={risk}
           plan={plan}

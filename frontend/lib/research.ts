@@ -13,6 +13,7 @@ import {
   type Proposal,
   type RiskReport,
   type SeedCampaignSummary,
+  type SwarmHandoff,
   type WetlabPlan,
   type WetlabResult,
 } from "@/lib/api";
@@ -41,6 +42,12 @@ export const research = {
       `/lab/projects/${projectId}/research/proposal${commitId ? `?commit_id=${commitId}` : ""}`,
     ),
   metrics: () => api.get<MetricDefinitionOut[]>("/lab/research/metrics"),
+  /** End of a sitting: hand the current interaction state to the swarm as one autonomous run. */
+  handoff: (
+    projectId: string,
+    body: { commit_id?: string; host?: string; notes?: string; label_ids?: string[] },
+  ) =>
+    api.post<SwarmHandoff>(`/lab/projects/${projectId}/research/handoff`, body),
 
   labels: (commitId: string) => api.get<LabelsResponse>(`/lab/commits/${commitId}/labels`),
   addLabel: (

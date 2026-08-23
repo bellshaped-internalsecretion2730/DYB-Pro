@@ -45,6 +45,7 @@ EVENT_KINDS = (
     "version_created",
     "label_added",
     "diff_detected",
+    "handoff",
     "literature",
     "metrics",
     "wetlab_plan",
