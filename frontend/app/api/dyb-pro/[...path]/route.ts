@@ -6,6 +6,17 @@ export const dynamic = "force-dynamic";
 const SEGMENT = /^[A-Za-z0-9._-]+$/;
 const ALLOWED_METHODS = new Set(["GET", "POST", "PATCH", "DELETE"]);
 
+// A daemon pass or a design cycle fans out to Devin child sessions, so it runs for minutes.
+const SLOW_SEGMENTS = ["research", "daemon", "cycles", "wetlab"];
+const FAST_TIMEOUT_MS = 120_000;
+const SLOW_TIMEOUT_MS = 900_000;
+
+function timeoutFor(path: string[]): number {
+  return path.some((segment) => SLOW_SEGMENTS.includes(segment))
+    ? SLOW_TIMEOUT_MS
+    : FAST_TIMEOUT_MS;
+}
+
 async function handleRequest(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
@@ -31,7 +42,12 @@ async function handleRequest(
   );
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120_000);
+  const budgetMs = timeoutFor(path);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, budgetMs);
   try {
     const upstream = await fetch(target, {
       method: request.method,
@@ -51,6 +67,17 @@ async function handleRequest(
       headers: responseHeaders,
     });
   } catch {
+    // A timeout is not an outage: the backend keeps working, so say so instead of
+    // claiming the engine is down.
+    if (timedOut) {
+      return Response.json(
+        {
+          detail: `still running after ${Math.round(budgetMs / 1000)}s — the agents are still ` +
+            `working, reopen the pane in a moment to pick up the result`,
+        },
+        { status: 504, headers: noStore() },
+      );
+    }
     return Response.json(
       { detail: "design engine is not reachable" },
       { status: 503, headers: noStore() },
