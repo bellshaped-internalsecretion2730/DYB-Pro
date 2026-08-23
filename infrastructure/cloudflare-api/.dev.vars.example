@@ -1,0 +1,30 @@
+# Copy to .dev.vars for local Wrangler development. Never commit the populated file.
+# Every name below is declared in wrangler.jsonc as a required Cloudflare secret.
+
+DATABASE_URL=postgresql+psycopg://user:password@managed-postgres.example:5432/dybpro?sslmode=require
+REDIS_URL=rediss://default:password@managed-redis.example:6379/0
+CORS_ORIGINS=https://app.example.com
+
+# Devin organization Service User key (cog_...), not a personal or legacy key.
+DEVIN_API_KEY=cog_replace_me
+DEVIN_ORG_ID=org-replace-me
+
+OPENAI_API_KEY=sk-replace-me
+
+# Authenticated external GPU inference endpoints. Cloudflare runs the orchestration,
+# not AlphaFold or ProteinMPNN GPU inference itself.
+ALPHAFOLD_API_URL=https://gpu.example.com/protein-structure/alphafold2/predict-structure-from-sequence
+ALPHAFOLD_API_KEY=replace-me
+PROTEINMPNN_API_URL=https://gpu.example.com/biology/ipd/proteinmpnn/predict
+PROTEINMPNN_API_KEY=replace-me
+
+# R2 S3-compatible endpoint and bucket-scoped Object Read & Write credentials.
+S3_ENDPOINT_URL=https://replace-account-id.r2.cloudflarestorage.com
+S3_ACCESS_KEY=replace-me
+S3_SECRET_KEY=replace-me
+
+# Generate independent high-entropy values. The scientist value must also be set
+# as DYB_PRO_API_KEY on the frontend Worker.
+SEED_ADMIN_API_KEY=replace-with-a-long-random-admin-key
+SEED_SCIENTIST_API_KEY=replace-with-a-long-random-scientist-key
+SEED_VIEWER_API_KEY=replace-with-a-long-random-viewer-key

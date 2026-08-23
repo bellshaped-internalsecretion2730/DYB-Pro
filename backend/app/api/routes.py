@@ -31,6 +31,7 @@ from app.api.schemas import (
     ProblemSpecOut,
     ProjectCreate,
     ProjectOut,
+    ProjectUpdate,
     ProviderStatus,
 )
 from app.config import get_settings
@@ -135,9 +136,7 @@ def _project_out(db: Session, project: Project) -> ProjectOut:
     commit_count = db.scalar(
         select(func.count(ProteinCommit.id)).where(ProteinCommit.project_id == project.id)
     )
-    cycle_count = db.scalar(
-        select(func.count(DesignCycle.id)).where(DesignCycle.project_id == project.id)
-    )
+    cycle_count = db.scalar(select(func.count(DesignCycle.id)).where(DesignCycle.project_id == project.id))
     branches = list(db.scalars(select(Branch).where(Branch.project_id == project.id)))
     main = next((b for b in branches if b.name == "main"), None)
     return ProjectOut(
@@ -178,9 +177,7 @@ def create_project(
         name=payload.name,
         goal=payload.goal,
         target_name=payload.target_name,
-        target_sequence=seqlib.clean_sequence(payload.target_sequence)
-        if payload.target_sequence
-        else "",
+        target_sequence=seqlib.clean_sequence(payload.target_sequence) if payload.target_sequence else "",
         owner_id=user.id,
     )
     db.add(project)
@@ -191,10 +188,33 @@ def create_project(
 
 
 @router.get("/projects/{project_id}", response_model=ProjectOut, tags=["projects"])
-def get_project(
-    project_id: str, db: Session = Depends(get_db), user: User = viewer
-) -> ProjectOut:
+def get_project(project_id: str, db: Session = Depends(get_db), user: User = viewer) -> ProjectOut:
     return _project_out(db, require_project(db, user, project_id))
+
+
+@router.patch("/projects/{project_id}", response_model=ProjectOut, tags=["projects"])
+def update_project(
+    project_id: str,
+    payload: ProjectUpdate,
+    db: Session = Depends(get_db),
+    user: User = scientist,
+) -> ProjectOut:
+    """Attach or replace target context without creating a disconnected project."""
+    project = require_project(db, user, project_id, write=True)
+    if payload.goal is not None:
+        project.goal = payload.goal.strip()
+    if payload.target_name is not None:
+        project.target_name = payload.target_name.strip()
+    if payload.target_sequence is not None:
+        try:
+            project.target_sequence = (
+                seqlib.clean_sequence(payload.target_sequence) if payload.target_sequence else ""
+            )
+        except seqlib.SequenceError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    db.commit()
+    db.refresh(project)
+    return _project_out(db, project)
 
 
 @router.post("/projects/{project_id}/uploads", tags=["projects"])
@@ -220,14 +240,10 @@ async def upload(
 
 
 @router.get("/projects/{project_id}/artifacts", tags=["projects"])
-def list_artifacts(
-    project_id: str, db: Session = Depends(get_db), user: User = viewer
-) -> list[dict]:
+def list_artifacts(project_id: str, db: Session = Depends(get_db), user: User = viewer) -> list[dict]:
     require_project(db, user, project_id)
     rows = db.scalars(
-        select(Artifact)
-        .where(Artifact.project_id == project_id)
-        .order_by(Artifact.created_at.desc())
+        select(Artifact).where(Artifact.project_id == project_id).order_by(Artifact.created_at.desc())
     )
     return [
         {
@@ -245,9 +261,7 @@ def list_artifacts(
 
 
 @router.get("/artifacts/{artifact_id}/content", tags=["projects"])
-def artifact_content(
-    artifact_id: str, db: Session = Depends(get_db), user: User = viewer
-) -> Response:
+def artifact_content(artifact_id: str, db: Session = Depends(get_db), user: User = viewer) -> Response:
     artifact = db.get(Artifact, artifact_id)
     if artifact is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "artifact not found")
@@ -297,9 +311,7 @@ def start_cycle(
             status.HTTP_400_BAD_REQUEST,
             "upload a sequence or structure before running a design cycle",
         )
-    last_round = db.scalar(
-        select(func.max(DesignCycle.round)).where(DesignCycle.project_id == project.id)
-    )
+    last_round = db.scalar(select(func.max(DesignCycle.round)).where(DesignCycle.project_id == project.id))
     cycle = DesignCycle(
         project_id=project.id,
         user_id=user.id,
@@ -308,6 +320,13 @@ def start_cycle(
         branch=payload.branch,
         acu_limit=payload.acu_limit,
         status="queued",
+        plan={
+            "workflow_tools": payload.workflow_tools.model_dump(),
+            "workflow": {
+                "policies": payload.workflow_tools.model_dump(),
+                "runs": [],
+            },
+        },
     )
     db.add(cycle)
     db.commit()
@@ -319,9 +338,7 @@ def start_cycle(
 
 
 @router.get("/projects/{project_id}/cycles", response_model=list[CycleOut], tags=["cycles"])
-def list_cycles(
-    project_id: str, db: Session = Depends(get_db), user: User = viewer
-) -> list[CycleOut]:
+def list_cycles(project_id: str, db: Session = Depends(get_db), user: User = viewer) -> list[CycleOut]:
     require_project(db, user, project_id)
     rows = db.scalars(
         select(DesignCycle)
@@ -345,13 +362,9 @@ def get_cycle(cycle_id: str, db: Session = Depends(get_db), user: User = viewer)
 
 
 @router.get("/cycles/{cycle_id}/agents", response_model=list[AgentRunOut], tags=["cycles"])
-def cycle_agents(
-    cycle_id: str, db: Session = Depends(get_db), user: User = viewer
-) -> list[AgentRunOut]:
+def cycle_agents(cycle_id: str, db: Session = Depends(get_db), user: User = viewer) -> list[AgentRunOut]:
     _get_cycle(db, user, cycle_id)
-    rows = db.scalars(
-        select(AgentRun).where(AgentRun.cycle_id == cycle_id).order_by(AgentRun.created_at)
-    )
+    rows = db.scalars(select(AgentRun).where(AgentRun.cycle_id == cycle_id).order_by(AgentRun.created_at))
     return [
         AgentRunOut(
             id=r.id,
@@ -462,9 +475,7 @@ def _result_out(r: MeasuredResult) -> MeasuredResultOut:
     )
 
 
-@router.post(
-    "/projects/{project_id}/results", response_model=MeasuredResultOut, tags=["wetlab"]
-)
+@router.post("/projects/{project_id}/results", response_model=MeasuredResultOut, tags=["wetlab"])
 def add_result(
     project_id: str,
     payload: MeasuredResultCreate,
@@ -528,9 +539,7 @@ def add_result(
     return _result_out(result)
 
 
-@router.get(
-    "/projects/{project_id}/results", response_model=list[MeasuredResultOut], tags=["wetlab"]
-)
+@router.get("/projects/{project_id}/results", response_model=list[MeasuredResultOut], tags=["wetlab"])
 def list_results(
     project_id: str, db: Session = Depends(get_db), user: User = viewer
 ) -> list[MeasuredResultOut]:
@@ -593,10 +602,7 @@ def create_problem_spec(
         active.status = "superseded"
         active.superseded_at = utcnow()
     version = (
-        db.scalar(
-            select(func.max(ProblemSpec.version)).where(ProblemSpec.project_id == project_id)
-        )
-        or 0
+        db.scalar(select(func.max(ProblemSpec.version)).where(ProblemSpec.project_id == project_id)) or 0
     ) + 1
     spec = ProblemSpec(
         project_id=project_id,
@@ -620,9 +626,7 @@ def create_problem_spec(
     response_model=ProblemSpecOut,
     tags=["problem-spec"],
 )
-def get_problem_spec(
-    project_id: str, db: Session = Depends(get_db), user: User = viewer
-) -> ProblemSpecOut:
+def get_problem_spec(project_id: str, db: Session = Depends(get_db), user: User = viewer) -> ProblemSpecOut:
     require_project(db, user, project_id)
     spec = db.scalar(
         select(ProblemSpec).where(
@@ -874,9 +878,7 @@ def commit_lineage(
 
 
 @router.get("/commits/{commit_id}/structure", tags=["versions"])
-def commit_structure(
-    commit_id: str, db: Session = Depends(get_db), user: User = viewer
-) -> Response:
+def commit_structure(commit_id: str, db: Session = Depends(get_db), user: User = viewer) -> Response:
     commit = _get_commit(db, user, commit_id)
     if not commit.structure_key:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no structure for this commit")
@@ -986,9 +988,7 @@ def export_cycle(
 
 
 @router.get("/projects/{project_id}/export/graph", tags=["exports"])
-def export_project_graph(
-    project_id: str, db: Session = Depends(get_db), user: User = viewer
-) -> Response:
+def export_project_graph(project_id: str, db: Session = Depends(get_db), user: User = viewer) -> Response:
     require_project(db, user, project_id)
     graph = export_graph(db, project_id)
     return Response(

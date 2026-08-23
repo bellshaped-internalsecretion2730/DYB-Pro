@@ -7,7 +7,6 @@ import AskPane from "@/components/AskPane";
 import CommandPalette, { type Command } from "@/components/CommandPalette";
 import DatabaseSearch from "@/components/DatabaseSearch";
 import FoldStrip from "@/components/FoldStrip";
-import IconRail, { RAIL_SECTIONS, type RailSection } from "@/components/IconRail";
 import MetricStrip from "@/components/MetricStrip";
 import ProteinViewer from "@/components/ProteinViewer";
 import ProviderBadge from "@/components/ProviderBadge";
@@ -19,6 +18,7 @@ import StructureViewer from "@/components/StructureViewer";
 import VersionDag from "@/components/VersionDag";
 import { research as lab } from "@/lib/research";
 import {
+  DEFAULT_WORKFLOW_TOOLS,
   api,
   apiKey,
   setApiKey,
@@ -31,18 +31,21 @@ import {
   type ProjectResearch,
   type Provider,
   type Shortlist,
+  type WorkflowTool,
+  type WorkflowToolMode,
+  type WorkflowTools,
 } from "@/lib/api";
 
 const TERMINAL = ["committed", "partial", "failed", "cancelled"];
 type CenterTab = "structure" | "lineage" | "shortlist" | "research" | "lab" | "data";
 
 const CENTER_TABS: [CenterTab, string, string][] = [
-  ["structure", "Structure", "the selected version in 3D, with its sequence and scores"],
-  ["lineage", "Lineage", "every design as an immutable commit: parent, agent, prompt, citations"],
-  ["shortlist", "Shortlist", "ranked wet-lab candidates for the attached cycle"],
-  ["research", "Research", "the always-live research daemon and the append-only observation log"],
-  ["lab", "Lab", "labels, evidence, wet-lab loop and what the campaign learned"],
-  ["data", "Data", "public database search with the upstream source shown"],
+  ["structure", "3D viewer", "interactive structure, residue selection, measurements and exports"],
+  ["lineage", "Designs", "version history, score charts and immutable design lineage"],
+  ["shortlist", "Candidates", "ranked wet-lab candidates for the attached cycle"],
+  ["research", "Research", "the autonomous research daemon and its evidence log"],
+  ["lab", "Research lab", "labels, evidence, wet-lab loop and campaign learning"],
+  ["data", "Sources", "public database search with explicit provenance"],
 ];
 
 export default function Workspace() {
@@ -50,6 +53,9 @@ export default function Workspace() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [brief, setBrief] = useState("");
+  const [workflowTools, setWorkflowTools] = useState<WorkflowTools>(() => ({
+    ...DEFAULT_WORKFLOW_TOOLS,
+  }));
   const [cycle, setCycle] = useState<Cycle | null>(null);
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [agents, setAgents] = useState<AgentRun[]>([]);
@@ -61,7 +67,6 @@ export default function Workspace() {
   const [error, setError] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [tab, setTab] = useState<CenterTab>("structure");
-  const [rail, setRail] = useState<RailSection>("ask");
   const [view, setView] = useState<"3d" | "schematic">("3d");
   const [pasted, setPasted] = useState<{ text: string; name: string } | null>(null);
   const [marked, setMarked] = useState<number[]>([]);
@@ -194,6 +199,10 @@ export default function Workspace() {
 
   async function runCycle() {
     if (!project) return;
+    if (!project.head_commit_id || !project.target_sequence?.trim()) {
+      setError("Add both the working protein and target sequence before starting the swarm.");
+      return;
+    }
     setBusy("cycle");
     setError(null);
     setShortlist(null);
@@ -201,6 +210,7 @@ export default function Workspace() {
       const created = await api.post<Cycle>(`/projects/${project.id}/cycles`, {
         brief: brief || project.goal,
         branch: "main",
+        workflow_tools: workflowTools,
       });
       setCycles((rows) => [created, ...rows.filter((c) => c.id !== created.id)]);
       await attachCycle(created);
@@ -235,6 +245,10 @@ export default function Workspace() {
    */
   async function handoff() {
     if (!project) return;
+    if (!project.head_commit_id || !project.target_sequence?.trim()) {
+      setError("Add both the working protein and target sequence before handing off to the swarm.");
+      return;
+    }
     setBusy("handoff");
     setError(null);
     setShortlist(null);
@@ -245,6 +259,7 @@ export default function Workspace() {
         const queued = await lab.handoff(project.id, {
           commit_id: selectedId ?? undefined,
           notes: brief || project.goal,
+          workflow_tools: workflowTools,
         });
         note = `Queued ${queued.daemon_task.kind} (${queued.daemon_task.status}) for ${
           queued.handoff.commit_label || queued.handoff.commit_id.slice(0, 8)
@@ -255,6 +270,7 @@ export default function Workspace() {
       const created = await api.post<Cycle>(`/projects/${project.id}/cycles`, {
         brief: brief || project.goal,
         branch: "main",
+        workflow_tools: workflowTools,
       });
       setCycles((rows) => [created, ...rows.filter((c) => c.id !== created.id)]);
       await attachCycle(created);
@@ -309,13 +325,6 @@ export default function Workspace() {
         setPaletteOpen((v) => !v);
       }
       if (e.key === "Escape") setPaletteOpen(false);
-      if (e.altKey && /^[1-9]$/.test(e.key)) {
-        const next = RAIL_SECTIONS[Number(e.key) - 1];
-        if (next) {
-          e.preventDefault();
-          setRail(next);
-        }
-      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -345,91 +354,134 @@ export default function Workspace() {
     },
   ];
 
+  const moleculeInputs = (
+    <SequenceLoader
+      project={project}
+      referenceSequence={sequence}
+      referenceLabel={selected?.label ?? null}
+      busy={busy !== null}
+      inline
+      onRenderStructure={(text, name) => {
+        setPasted({ text, name });
+        setView("3d");
+        setTab("structure");
+      }}
+      onCommitFile={(file) => {
+        const list = new DataTransfer();
+        list.items.add(file);
+        upload(list.files).catch(fail);
+      }}
+      onSetTarget={(targetName, targetSequence) => {
+        if (!project) return;
+        setBusy("project");
+        api
+          .patch<Project>(`/projects/${project.id}`, {
+            target_name: targetName,
+            target_sequence: targetSequence,
+          })
+          .then(async (updatedProject) => {
+            setProject(updatedProject);
+            await refreshProject(updatedProject.id);
+            await loadProjects();
+          })
+          .catch(fail)
+          .finally(() => setBusy(null));
+      }}
+      onCompare={setMarked}
+    />
+  );
+
   return (
     <>
       <header className="top">
-        <div className="brand">
-          DYB<span> Pro</span>
+        <div className="brand-lockup">
+          <span className="brand-mark" aria-hidden="true" />
+          <div>
+            <div className="brand">DYB <span>Pro</span></div>
+            <span className="tagline">Autonomous protein design</span>
+          </div>
         </div>
-        <span className="tagline">Pre-wetlab design OS</span>
+        <span className="project-context">
+          <span className="project-dot" />
+          {project?.name || "No project selected"}
+        </span>
         <ProviderBadge provider={provider} />
-        {provider?.openai_configured && <span className="badge">OpenAI analysis on</span>}
         <div className="grow" />
-        <Link href="/pharmakon">Pharmakon drug programs →</Link>
-        <button className="ghost" type="button" onClick={() => setPaletteOpen(true)}>
-          <span className="kbd">⌘K</span> Command palette
+        <button className="ghost top-command" type="button" onClick={() => setPaletteOpen(true)}>
+          Commands <span className="kbd">Ctrl K</span>
         </button>
-        <input
-          type="text"
-          style={{ width: 190 }}
-          value={keyInput}
-          onChange={(e) => setKeyInput(e.target.value)}
-          aria-label="API key"
-        />
-        <button
-          className="secondary"
-          type="button"
-          onClick={() => {
-            setApiKey(keyInput);
-            window.location.reload();
-          }}
-        >
-          Use key
-        </button>
+        <details className="app-menu">
+          <summary>Menu</summary>
+          <div className="menu-popover">
+            <span className="menu-label">Workspace</span>
+            <Link className="menu-item" href="/pharmakon">
+              Pharmakon drug programs <span>↗</span>
+            </Link>
+            <button className="menu-item" type="button" onClick={() => setPaletteOpen(true)}>
+              Command palette <span>Ctrl K</span>
+            </button>
+            <div className="menu-divider" />
+            <label className="menu-field">
+              <span>DYB app API key</span>
+              <input
+                type="text"
+                value={keyInput}
+                onChange={(event) => setKeyInput(event.target.value)}
+                aria-label="DYB app API key"
+                placeholder="Optional override"
+              />
+            </label>
+            <button
+              className="secondary menu-save"
+              type="button"
+              onClick={() => {
+                setApiKey(keyInput);
+                window.location.reload();
+              }}
+            >
+              Save API key
+            </button>
+          </div>
+        </details>
       </header>
 
       {error && (
-        <div className="error-bar">
-          <p className="err" style={{ margin: 0 }}>
-            {error}
-          </p>
+        <div className="error-bar" role="alert">
+          <p className="err">{error}</p>
         </div>
       )}
 
       <div className="workspace">
-        <IconRail active={rail} onSelect={setRail} />
-
         <aside className="pane left" aria-label="ask and agent control">
           <AskPane
-            section={rail}
-            selectedLabel={selected?.label ?? selected?.short_id ?? null}
-            handoffNote={handoffNote}
-            onHandoff={handoff}
             projects={projects}
             project={project}
-            cycles={cycles}
             cycle={cycle}
-            agents={agents}
             brief={brief}
             busy={busy}
             running={running}
+            workflowTools={workflowTools}
             fileRef={fileRef}
+            inputTools={moleculeInputs}
             onSelectProject={selectProject}
             onBriefChange={setBrief}
+            onWorkflowToolChange={(tool: WorkflowTool, mode: WorkflowToolMode) => {
+              setWorkflowTools((current) => ({ ...current, [tool]: mode }));
+            }}
             onRun={runCycle}
             onCancel={cancelCycle}
             onSeedDemo={seedDemo}
             onUpload={upload}
-            onAttachCycle={(c) => {
-              attachCycle(c).catch(fail);
-            }}
           />
         </aside>
 
         <main className="center">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateRows: "auto minmax(0, 1fr)",
-              minHeight: 0,
-              minWidth: 0,
-            }}
-          >
-            <div className="pane-header" role="tablist" aria-label="center surface">
-              <div className="row">
+          <div className="center-shell">
+            <div className="center-nav" role="tablist" aria-label="center surface">
+              <div className="surface-tabs">
                 {CENTER_TABS.map(([id, label, hint]) => (
                   <button
-                    className="tab tip"
+                    className="surface-tab tip"
                     type="button"
                     role="tab"
                     key={id}
@@ -441,62 +493,20 @@ export default function Workspace() {
                   </button>
                 ))}
               </div>
-              <div className="row">
-                {tab === "structure" && (
-                  <div className="row" role="group" aria-label="viewer mode">
-                    {(["3d", "schematic"] as const).map((v) => (
-                      <button
-                        className="tab tip"
-                        type="button"
-                        key={v}
-                        aria-selected={view === v}
-                        data-tip={
-                          v === "3d"
-                            ? "coarse C\u03b1 coordinates rendered with Mol*"
-                            : "2D schematic of the backbone; works without WebGL"
-                        }
-                        onClick={() => setView(v)}
-                      >
-                        {v}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <SequenceLoader
-                  project={project}
-                  referenceSequence={sequence}
-                  referenceLabel={selected?.label ?? null}
-                  busy={busy !== null}
-                  onRenderStructure={(text, name) => {
-                    setPasted({ text, name });
-                    setView("3d");
-                    setTab("structure");
-                  }}
-                  onCommitFile={(file) => {
-                    const list = new DataTransfer();
-                    list.items.add(file);
-                    upload(list.files).catch(fail);
-                  }}
-                  onCreateTargetProject={(targetName, targetSequence) => {
-                    setBusy("project");
-                    api
-                      .post<Project>("/projects", {
-                        name: targetName,
-                        goal: brief,
-                        target_name: targetName,
-                        target_sequence: targetSequence,
-                      })
-                      .then(async (p) => {
-                        await loadProjects();
-                        await selectProject(p);
-                      })
-                      .catch(fail)
-                      .finally(() => setBusy(null));
-                  }}
-                  onCompare={setMarked}
-                />
-                <span className="meta">{project ? project.name : "No project"}</span>
-              </div>
+              {tab === "structure" && (
+                <div className="view-switch" role="group" aria-label="viewer mode">
+                  {(["3d", "schematic"] as const).map((mode) => (
+                    <button
+                      type="button"
+                      key={mode}
+                      aria-pressed={view === mode}
+                      onClick={() => setView(mode)}
+                    >
+                      {mode === "3d" ? "3D" : "2D"}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {tab === "structure" &&
@@ -506,7 +516,9 @@ export default function Workspace() {
                   compareCommitId={compared?.id ?? null}
                   label={selected?.label ?? selected?.short_id ?? null}
                   sequence={sequence}
-                  mutations={(selected?.mutations ?? []).filter((m): m is string => !!m)}
+                  mutations={(selected?.mutations ?? []).filter(
+                    (mutation): mutation is string => !!mutation,
+                  )}
                   pasted={pasted}
                   marked={marked}
                 />
@@ -519,6 +531,125 @@ export default function Workspace() {
                 />
               ))}
 
+            {tab === "lineage" && (
+              <div className="center-body designs-view">
+                <section className="panel wide metrics-panel">
+                  <div className="section-title">
+                    <div>
+                      <span className="eyebrow">Performance</span>
+                      <h2>Design scorecard</h2>
+                    </div>
+                    <span className="meta">Hover any bar for methodology</span>
+                  </div>
+                  <MetricStrip node={selected} compareNode={compared} versions={versions} />
+                </section>
+                <section className="panel wide">
+                  <div className="section-title">
+                    <div>
+                      <span className="eyebrow">Immutable history</span>
+                      <h2>Design lineage</h2>
+                    </div>
+                    <span className="meta">{versions.length} versions</span>
+                  </div>
+                  <VersionDag graph={graph} />
+                </section>
+                <section className="panel wide version-browser">
+                  <FoldStrip
+                    nodes={versions}
+                    selectedId={selected?.id ?? null}
+                    compareId={compareId}
+                    onSelect={(node) => {
+                      setSelectedId(node.id);
+                      setPasted(null);
+                      setMarked([]);
+                      setTab("structure");
+                    }}
+                    onCompare={(node) => setCompareId(node.id)}
+                  />
+                </section>
+              </div>
+            )}
+
+            {tab === "shortlist" && (
+              <div className="center-body">
+                <section className="panel">
+                  <div className="section-title">
+                    <div>
+                      <span className="eyebrow">Decision surface</span>
+                      <h2>Wet-lab candidates</h2>
+                    </div>
+                    {cycles.length > 0 && (
+                      <label className="cycle-picker">
+                        <span className="sr-only">Cycle history</span>
+                        <select
+                          className="mini-select"
+                          aria-label="cycle history"
+                          value={cycle?.id || ""}
+                          onChange={(event) => {
+                            const nextCycle = cycles.find((row) => row.id === event.target.value);
+                            if (nextCycle) attachCycle(nextCycle).catch(fail);
+                          }}
+                        >
+                          {cycles.map((row) => (
+                            <option key={row.id} value={row.id}>
+                              Round {row.round} · {row.status}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                  <ShortlistPanel shortlist={shortlist} cycleId={cycle?.id ?? null} />
+                </section>
+              </div>
+            )}
+
+            {tab === "research" && (
+              <div className="center-body research-grid">
+                <section className="panel">
+                  <div className="section-title">
+                    <div>
+                      <span className="eyebrow">Always on</span>
+                      <h2
+                        className="tip"
+                        data-tip="Watches commits, uploads and measured results, then reuses cached research and recalculates drift"
+                      >
+                        Research daemon
+                      </h2>
+                    </div>
+                  </div>
+                  <ResearchPane
+                    research={research}
+                    onTrigger={triggerResearch}
+                    busy={busy === "research"}
+                  />
+                </section>
+                <section className="panel">
+                  <div className="section-title">
+                    <div>
+                      <span className="eyebrow">Append-only memory</span>
+                      <h2
+                        className="tip"
+                        data-tip="Evidence the next design cycle reads before proposing mutations"
+                      >
+                        Evidence log
+                      </h2>
+                    </div>
+                    <span className="meta">{timeline.length} events</span>
+                  </div>
+                  <div className="timeline">
+                    {timeline.map((observation) => (
+                      <div className="event" key={observation.id}>
+                        <div className="kind">{observation.kind} · {observation.role}</div>
+                        <div>{observation.summary}</div>
+                      </div>
+                    ))}
+                    {timeline.length === 0 && <p className="muted">No observations yet</p>}
+                  </div>
+                </section>
+              </div>
+            )}
+
             {tab === "lab" && (
               <div className="center-body lab">
                 <ResearchWorkspace projectId={project?.id ?? null} />
@@ -528,91 +659,16 @@ export default function Workspace() {
             {tab === "data" && (
               <div className="center-body">
                 <section className="panel">
-                  <h2>Public database search</h2>
-                  <p className="hint">
-                    Search public records with the upstream source and provenance shown explicitly.
-                  </p>
+                  <div className="section-title">
+                    <div>
+                      <span className="eyebrow">Provenance first</span>
+                      <h2>Public data sources</h2>
+                    </div>
+                  </div>
                   <DatabaseSearch />
                 </section>
               </div>
             )}
-
-            {tab === "lineage" && (
-              <div className="center-body">
-                <section className="panel">
-                  <h2>Protein version DAG</h2>
-                  <p className="hint">
-                    Every design is an immutable commit: sequence, structure, scores, parent, agent, prompt
-                    and citations.
-                  </p>
-                  <VersionDag graph={graph} />
-                </section>
-              </div>
-            )}
-
-            {tab === "shortlist" && (
-              <div className="center-body">
-                <section className="panel">
-                  <h2>Wet-lab shortlist</h2>
-                  <ShortlistPanel shortlist={shortlist} cycleId={cycle?.id ?? null} />
-                </section>
-              </div>
-            )}
-
-            {tab === "research" && (
-              <div className="center-body">
-                <section className="panel">
-                  <h2
-                    className="tip"
-                    data-tip="always-live loop, separate from design cycles: it watches commits, uploads and measured results, reuses cached research and re-estimates proxy-vs-measurement drift"
-                  >
-                    Research daemon
-                  </h2>
-                  <ResearchPane
-                    research={research}
-                    onTrigger={triggerResearch}
-                    busy={busy === "research"}
-                  />
-                </section>
-                <section className="panel">
-                  <h2
-                    className="tip"
-                    data-tip="append-only memory the next cycle reads before proposing designs"
-                  >
-                    Observation log
-                  </h2>
-                  <div className="timeline">
-                    {timeline.map((o) => (
-                      <div className="event" key={o.id}>
-                        <div className="kind">
-                          {o.kind} · {o.role}
-                        </div>
-                        <div>{o.summary}</div>
-                      </div>
-                    ))}
-                    {timeline.length === 0 && <p className="muted">No observations yet</p>}
-                  </div>
-                </section>
-              </div>
-            )}
-          </div>
-
-          <div>
-            {tab === "structure" && (
-              <MetricStrip node={selected} compareNode={compared} versions={versions} />
-            )}
-            <FoldStrip
-              nodes={versions}
-              selectedId={selected?.id ?? null}
-              compareId={compareId}
-              onSelect={(n) => {
-                setSelectedId(n.id);
-                setPasted(null);
-                setMarked([]);
-                setTab("structure");
-              }}
-              onCompare={(n) => setCompareId(n.id)}
-            />
           </div>
         </main>
 
@@ -622,6 +678,7 @@ export default function Workspace() {
       </div>
 
       <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+      {handoffNote && <span className="sr-only" aria-live="polite">{handoffNote}</span>}
     </>
   );
 }

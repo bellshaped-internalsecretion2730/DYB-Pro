@@ -1,280 +1,278 @@
 "use client";
 
-import type { RefObject } from "react";
-import { agentState } from "@/components/AgentSwarm";
-import type { RailSection } from "@/components/IconRail";
-import type { AgentRun, Cycle, Project } from "@/lib/api";
+import type { ReactNode, RefObject } from "react";
+import type {
+  Cycle,
+  Project,
+  WorkflowTool,
+  WorkflowToolMode,
+  WorkflowTools,
+} from "@/lib/api";
 
-const TITLES: Record<RailSection, string> = {
-  ask: "Ask",
-  agents: "Agents",
-  history: "History",
-  files: "Files",
-  handoff: "Handoff",
-};
+const WORKFLOW_TOOL_OPTIONS: {
+  id: WorkflowTool;
+  label: string;
+  description: string;
+}[] = [
+  {
+    id: "alphafold",
+    label: "AlphaFold",
+    description: "Predict a backbone when the run needs a trustworthy structure",
+  },
+  {
+    id: "proteinmpnn",
+    label: "ProteinMPNN",
+    description: "Propose sequences against the selected or predicted backbone",
+  },
+];
+
+const WORKFLOW_MODES: { id: WorkflowToolMode; label: string }[] = [
+  { id: "off", label: "Off" },
+  { id: "auto", label: "Auto" },
+  { id: "required", label: "Required" },
+];
 
 export default function AskPane({
-  section,
   projects,
   project,
-  cycles,
   cycle,
-  agents,
   brief,
   busy,
   running,
+  workflowTools,
   fileRef,
-  selectedLabel,
-  handoffNote,
+  inputTools,
   onSelectProject,
   onBriefChange,
+  onWorkflowToolChange,
   onRun,
   onCancel,
   onSeedDemo,
   onUpload,
-  onAttachCycle,
-  onHandoff,
 }: {
-  section: RailSection;
   projects: Project[];
   project: Project | null;
-  cycles: Cycle[];
   cycle: Cycle | null;
-  agents: AgentRun[];
   brief: string;
   busy: string | null;
   running: boolean;
+  workflowTools: WorkflowTools;
   fileRef: RefObject<HTMLInputElement | null>;
-  selectedLabel: string | null;
-  handoffNote: string | null;
+  inputTools?: ReactNode;
   onSelectProject: (p: Project) => void;
   onBriefChange: (value: string) => void;
+  onWorkflowToolChange: (tool: WorkflowTool, mode: WorkflowToolMode) => void;
   onRun: () => void;
   onCancel: () => void;
   onSeedDemo: () => void;
   onUpload: (files: FileList | null) => void;
-  onAttachCycle: (c: Cycle) => void;
-  onHandoff: () => void;
 }) {
-  const planned = cycle?.plan?.agents || [];
+  const hasProtein = Boolean(project && project.commit_count > 0);
+  const hasTarget = Boolean(project?.target_sequence?.trim());
+  const hasGoal = brief.trim().length > 0;
+  const acuProgress = cycle?.acu_limit
+    ? Math.min(100, Math.max(0, (cycle.acus_used / cycle.acu_limit) * 100))
+    : 0;
+
+  let assistantMessage = "Choose a project, then add the protein and target you want to investigate.";
+  if (project && !hasProtein) assistantMessage = "Project selected. Attach a protein sequence or structure to begin.";
+  if (hasProtein && !hasTarget) {
+    assistantMessage = "Protein received. Add the target sequence, then describe the outcome you want.";
+  }
+  if (hasProtein && hasTarget && !hasGoal) {
+    assistantMessage = "Molecular context is ready. Tell me the binding or design objective.";
+  }
+  if (hasProtein && hasGoal && !running) {
+    assistantMessage = "The context is ready. Submit the goal when you want the swarm to start.";
+  }
+  if (running) {
+    assistantMessage = "The swarm is working autonomously. Live execution appears in the panel on the right.";
+  }
 
   return (
-    <div data-testid="ask-pane">
-      <div className="pane-header">
-        <span className="label">{TITLES[section]}</span>
-        <span className="meta">⌘K commands</span>
+    <div className="chat-pane" data-testid="ask-pane">
+      <div className="pane-header chat-header">
+        <div>
+          <span className="eyebrow">Research copilot</span>
+          <strong>Design brief</strong>
+        </div>
+        <span className={`live-indicator${running ? " active" : ""}`}>
+          <i /> {running ? "Running" : "Ready"}
+        </span>
       </div>
 
-      {section === "ask" && (
-        <div className="section">
+      <div className="chat-thread" role="log" aria-label="research conversation">
+        <div className="chat-message assistant">
+          <span className="chat-avatar" aria-hidden="true">D</span>
+          <div className="chat-bubble">
+            <span className="chat-author">DYB copilot</span>
+            <p>{assistantMessage}</p>
+          </div>
+        </div>
+
+        {cycle && (
+          <div className="run-card" data-testid="cycle-progress">
+            <div className="run-card-head">
+              <span>Round {cycle.round}</span>
+              <strong>{cycle.status.replaceAll("_", " ")}</strong>
+            </div>
+            <span className="progress-track" aria-label={`${acuProgress.toFixed(0)} percent ACU used`}>
+              <span style={{ width: `${acuProgress}%` }} />
+            </span>
+            <div className="run-card-foot">
+              <span>{cycle.provider || "Provider pending"}</span>
+              <span>{cycle.acus_used}/{cycle.acu_limit} ACU</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="readiness" aria-label="run readiness">
+        <span
+          className={`readiness-item tip${hasProtein ? " ready" : ""}`}
+          data-tip="A committed FASTA, PDB or mmCIF working protein"
+          tabIndex={0}
+        >
+          <i /> Protein
+        </span>
+        <span
+          className={`readiness-item tip${hasTarget ? " ready" : ""}`}
+          data-tip="The target sequence used by docking features"
+          tabIndex={0}
+        >
+          <i /> Target
+        </span>
+        <span
+          className={`readiness-item tip${hasGoal ? " ready" : ""}`}
+          data-tip="The outcome and constraints the orchestrator will plan against"
+          tabIndex={0}
+        >
+          <i /> Goal
+        </span>
+      </div>
+
+      <div className="chat-composer">
+        <label className="field compact-field">
+          <span className="sr-only">Project context</span>
           <select
             value={project?.id || ""}
             aria-label="project"
-            onChange={(e) => {
-              const p = projects.find((x) => x.id === e.target.value);
-              if (p) onSelectProject(p);
+            onChange={(event) => {
+              const next = projects.find((row) => row.id === event.target.value);
+              if (next) onSelectProject(next);
             }}
           >
-            <option value="">— select project —</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} {p.is_demo ? "(demo)" : ""}
-              </option>
-            ))}
+            <option value="">Select project</option>
+            {projects.map((row) => {
+              const demoSuffix = row.is_demo && !row.name.toLowerCase().includes("(demo)") ? " (demo)" : "";
+              return (
+                <option key={row.id} value={row.id}>
+                  {row.name}{demoSuffix}
+                </option>
+              );
+            })}
           </select>
+        </label>
+
+        <label className="field prompt-field">
+          <span className="sr-only">Research goal</span>
           <textarea
             value={brief}
             aria-label="research brief"
-            onChange={(e) => onBriefChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && project && !running) onRun();
+            onChange={(event) => onBriefChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                (event.metaKey || event.ctrlKey) &&
+                project &&
+                !running &&
+                hasProtein &&
+                hasTarget &&
+                hasGoal
+              ) {
+                event.preventDefault();
+                onRun();
+              }
             }}
-            placeholder="Improve GB1 thermal stability without losing predicted Fc binding…"
+            placeholder="Describe the desired binding, stability, selectivity, and constraints…"
           />
-          <div className="row">
-            <button type="button" onClick={onRun} disabled={!project || busy === "cycle" || running}>
-              {running ? "Cycle running…" : "Run design cycle"}
-            </button>
-            {running && (
-              <button className="secondary" type="button" onClick={onCancel}>
-                Cancel
-              </button>
-            )}
-            <span className="kbd">⌘↵</span>
-          </div>
-          <div className="row">
-            <button className="secondary" type="button" onClick={onSeedDemo} disabled={busy === "seed"}>
-              Load demo project
-            </button>
-          </div>
-        </div>
-      )}
+        </label>
 
-      {section === "agents" && (
-        <>
-          <div className="section tight">
-            <span className="label">Run control</span>
-            <div className="row">
-              <button className="secondary" type="button" onClick={onCancel} disabled={!running}>
-                Cancel run
-              </button>
+        <div className="workflow-controls" role="group" aria-label="compute workflow">
+          <div className="workflow-controls-head">
+            <span>Compute workflow</span>
+            <span
+              className="tip"
+              data-tip="Auto lets the swarm decide. Required stops the run if that compute step cannot complete."
+              tabIndex={0}
+              aria-label="Compute workflow mode help"
+            >
+              ?
+            </span>
+          </div>
+          {WORKFLOW_TOOL_OPTIONS.map((tool) => (
+            <div className="workflow-tool-row" key={tool.id}>
+              <span className="workflow-tool-name tip" data-tip={tool.description} tabIndex={0}>
+                <i aria-hidden="true" />
+                {tool.label}
+              </span>
               <span
-                className="hint tip"
-                data-tip="the API exposes cancel only — there is no pause, resume, redirect or spawn route, so no button pretends to offer them"
-                tabIndex={0}
+                className="workflow-mode-options"
+                role="group"
+                aria-label={`${tool.label} workflow mode`}
               >
-                Cancel is the only live control
+                {WORKFLOW_MODES.map((mode) => (
+                  <button
+                    className="workflow-mode"
+                    type="button"
+                    key={mode.id}
+                    aria-pressed={workflowTools[tool.id] === mode.id}
+                    onClick={() => onWorkflowToolChange(tool.id, mode.id)}
+                    disabled={running}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
               </span>
             </div>
-            <div className="agent-state">
-              <span className="dot" style={{ background: running ? "var(--thinking)" : "var(--idle)" }} />
-              <span>{cycle ? `Round ${cycle.round} · ${cycle.status}` : "No cycle attached"}</span>
-              {cycle && (
-                <span className="mono" style={{ color: "var(--faint)" }}>
-                  {cycle.acus_used}/{cycle.acu_limit} ACU
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="section tight">
-            <span className="label">Playbook / tasks</span>
-            {planned.length === 0 && <span className="hint">The orchestrator plan lands here</span>}
-            <div className="list">
-              {planned.map((p, i) => {
-                const run = agents.find((a) => a.role === p.role);
-                const state = run ? agentState(run.status) : null;
-                return (
-                  <div className="list-row tip" key={`${p.role}-${i}`} data-tip={p.task} tabIndex={0}>
-                    <span className="k">
-                      <span
-                        className="dot"
-                        style={{ background: state?.color || "var(--idle)", marginRight: 6 }}
-                      />
-                      {p.role}
-                    </span>
-                    <span className="v">{state?.label || "Planned"}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
-
-      {section === "history" && (
-        <>
-          <div className="section tight">
-            <span className="label">Recent briefs</span>
-            {cycles.length === 0 && <span className="hint">No cycles yet</span>}
-            <div className="list">
-              {cycles.slice(0, 6).map((c) => (
-                <button
-                  className="list-row tip"
-                  type="button"
-                  key={`brief-${c.id}`}
-                  data-tip={c.brief || "empty brief"}
-                  onClick={() => onBriefChange(c.brief)}
-                >
-                  <span className="k">
-                    <span className="clip">{c.brief || "(empty brief)"}</span>
-                  </span>
-                  <span className="v">r{c.round}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="section tight">
-            <span className="label">Session history</span>
-            <div className="list">
-              {cycles.map((c) => (
-                <button
-                  className="list-row"
-                  type="button"
-                  key={c.id}
-                  aria-current={cycle?.id === c.id}
-                  onClick={() => onAttachCycle(c)}
-                >
-                  <span className="k">
-                    Cycle r{c.round} · {c.status}
-                  </span>
-                  <span className="v">{c.provider || "—"}</span>
-                </button>
-              ))}
-              {cycles.length === 0 && <span className="hint">Run a cycle to build history</span>}
-            </div>
-          </div>
-        </>
-      )}
-
-      {section === "files" && (
-        <div className="section tight">
-          <span className="label">Uploads</span>
-          <input
-            ref={fileRef}
-            type="file"
-            multiple
-            accept=".fasta,.fa,.faa,.pdb,.ent,.cif,.mmcif,.csv,.tsv"
-            aria-label="upload sequences or structures"
-            onChange={(e) => onUpload(e.target.files)}
-            disabled={!project || busy === "upload"}
-          />
-          <span
-            className="hint tip"
-            data-tip="FASTA becomes a root commit with a sequence only; PDB/mmCIF becomes a commit that carries the uploaded coordinates; CSV is read as assay results"
-            tabIndex={0}
-          >
-            FASTA · PDB · mmCIF · CSV
-          </span>
-          {project && (
-            <div className="list">
-              <div className="list-row">
-                <span className="k">Commits</span>
-                <span className="v">{project.commit_count}</span>
-              </div>
-              <div className="list-row">
-                <span className="k">Cycles</span>
-                <span className="v">{project.cycle_count}</span>
-              </div>
-              <div className="list-row">
-                <span className="k">Branches</span>
-                <span className="v">{project.branches.join(", ")}</span>
-              </div>
-            </div>
-          )}
+          ))}
         </div>
-      )}
 
-      {section === "handoff" && (
-        <div className="section tight">
-          <span className="label">Hand to the swarm</span>
-          <span className="hint">
-            {selectedLabel ? `From ${selectedLabel}` : "No version selected"}
-          </span>
-          <button
-            type="button"
-            className="tip"
-            data-tip="queues one handoff task for the selected version with the current brief as notes, then starts a design cycle — the autonomy entry points the API exposes"
-            disabled={!project || running || busy !== null}
-            onClick={onHandoff}
-          >
-            {busy === "handoff" ? "Handing off…" : "Hand off current brief"}
+        <div className="composer-tools">
+          {inputTools}
+          <label className={`attachment-button${!project || busy === "upload" ? " disabled" : ""}`}>
+            <input
+              ref={fileRef}
+              className="sr-only"
+              type="file"
+              multiple
+              accept=".fasta,.fa,.faa,.pdb,.ent,.cif,.mmcif,.csv,.tsv"
+              aria-label="upload sequences or structures"
+              onChange={(event) => onUpload(event.target.files)}
+              disabled={!project || busy === "upload"}
+            />
+            <span aria-hidden="true">＋</span> Attach file
+          </label>
+          <button className="ghost compact" type="button" onClick={onSeedDemo} disabled={busy === "seed"}>
+            Load demo
           </button>
-          {handoffNote && (
-            <span className="hint" data-testid="rail-handoff-receipt">
-              {handoffNote}
-            </span>
-          )}
-          <span
-            className="hint tip"
-            data-tip="a cycle is one planned pass: propose, score, filter, shortlist. It does not loop until an objective is met, and it cannot be redirected mid-flight"
-            tabIndex={0}
-          >
-            One planned pass, not an open loop
-          </span>
         </div>
-      )}
+
+        <button
+          className="run-button"
+          type="button"
+          onClick={onRun}
+          disabled={!project || !hasProtein || !hasTarget || !hasGoal || busy === "cycle" || running}
+        >
+          <span>{running ? "Autonomous run in progress" : "Send goal & start autonomous run"}</span>
+          <span className="kbd">Ctrl ↵</span>
+        </button>
+        {running && (
+          <button className="cancel-button" type="button" onClick={onCancel}>
+            Cancel current run
+          </button>
+        )}
+      </div>
     </div>
   );
 }

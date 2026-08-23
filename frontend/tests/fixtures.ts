@@ -13,6 +13,18 @@ export const cycle: Cycle = {
   orchestrator_session_url: "https://app.devin.ai/sessions/abc",
   plan: {
     strategy: "stability sweep then re-score docking",
+    workflow_tools: { alphafold: "auto", proteinmpnn: "required" },
+    workflow: {
+      policies: { alphafold: "auto", proteinmpnn: "required" },
+      runs: [
+        {
+          tool: "alphafold",
+          target: "working",
+          status: "finished",
+          reason: "verified PDB stored",
+        },
+      ],
+    },
     agents: [
       { role: "sequence", task: "Propose sequence-level designs." },
       { role: "literature", task: "Pull stability references." },
@@ -108,8 +120,11 @@ export const project: Project = {
   id: "proj-1",
   name: "GB1 stability",
   goal: "Improve GB1 thermal stability",
+  target_name: "IgG Fc",
+  target_sequence: "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ",
   is_demo: true,
   commit_count: 12,
   cycle_count: 3,
   branches: ["main", "stability"],
+  head_commit_id: "commit-9",
 };

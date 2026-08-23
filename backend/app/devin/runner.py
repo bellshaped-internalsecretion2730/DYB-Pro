@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.compute.workflow import capability_status
 from app.config import Settings, get_settings
 from app.devin import playbooks as pb
 from app.devin import simulation
@@ -55,6 +56,7 @@ def provider_status(settings: Settings | None = None) -> dict:
         "devin_api_flavor": settings.devin_api_flavor,
         "local_simulation_allowed": settings.allow_local_simulation,
         "openai_configured": settings.openai_enabled,
+        "compute": capability_status(settings),
     }
     try:
         status["provider"] = resolve_provider(settings)
@@ -65,8 +67,8 @@ def provider_status(settings: Settings | None = None) -> dict:
         try:
             with DevinClient(settings) as client:
                 status["devin_reachable"] = bool(client.health()["ok"])
-                # The health probe resolves the flavor, so report what is really in use: a
-                # personal key is demoted to v1 and the UI must not claim org endpoints.
+                # The health probe confirms the explicitly configured API flavor. Modern v3
+                # credentials are never silently downgraded after an RBAC error.
                 status["devin_api_flavor"] = client.api_flavor()
         except (DevinAPIError, DevinNotConfigured, OSError) as exc:
             status["devin_reachable"] = False
@@ -114,11 +116,7 @@ def reconcile_playbooks(db: Session, client: DevinClient | None = None) -> dict[
             if not playbook_id:
                 continue
             if cached is None:
-                db.add(
-                    PlaybookRef(
-                        role=role, playbook_id=playbook_id, title=spec.title, body_hash=body_hash
-                    )
-                )
+                db.add(PlaybookRef(role=role, playbook_id=playbook_id, title=spec.title, body_hash=body_hash))
             else:
                 cached.playbook_id = playbook_id
                 cached.body_hash = body_hash
@@ -259,9 +257,7 @@ class AgentSupervisor:
         run.finished_at = utcnow()
         self.db.flush()
 
-    def _start_devin_session(
-        self, run: AgentRun, spec: LaunchSpec, parent_session_id: str | None
-    ) -> None:
+    def _start_devin_session(self, run: AgentRun, spec: LaunchSpec, parent_session_id: str | None) -> None:
         run.attempts += 1
         run.started_at = utcnow()
         try:
@@ -273,6 +269,8 @@ class AgentSupervisor:
                 max_acu_limit=spec.acu_limit,
                 structured_output_schema=spec.schema,
                 parent_session_id=parent_session_id,
+                repos=[self.settings.devin_child_repo] if self.settings.devin_child_repo else None,
+                secret_ids=self.settings.devin_secret_id_list or None,
             )
         except DevinAPIError as exc:
             run.status = "failed"
@@ -368,9 +366,7 @@ class AgentSupervisor:
 
     def cancel(self, reason: str = "cancelled by scientist") -> int:
         cancelled = 0
-        runs = list(
-            self.db.scalars(select(AgentRun).where(AgentRun.cycle_id == self.cycle.id))
-        )
+        runs = list(self.db.scalars(select(AgentRun).where(AgentRun.cycle_id == self.cycle.id)))
         for run in runs:
             if run.status in {"finished", "failed", "cancelled", "timeout"}:
                 continue

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -12,6 +13,12 @@ class ProjectCreate(BaseModel):
     goal: str = ""
     target_name: str = ""
     target_sequence: str = ""
+
+
+class ProjectUpdate(BaseModel):
+    goal: str | None = None
+    target_name: str | None = None
+    target_sequence: str | None = None
 
 
 class ProjectOut(BaseModel):
@@ -28,10 +35,21 @@ class ProjectOut(BaseModel):
     head_commit_id: str | None = None
 
 
+ToolPolicy = Literal["off", "auto", "required"]
+
+
+class WorkflowTools(BaseModel):
+    """Scientist policy for allowlisted GPU tools used by the cycle worker."""
+
+    alphafold: ToolPolicy = "auto"
+    proteinmpnn: ToolPolicy = "auto"
+
+
 class CycleCreate(BaseModel):
     brief: str = Field(min_length=1, description="natural-language research brief for this cycle")
     branch: str = "main"
     acu_limit: int = Field(default=20, ge=1, le=200)
+    workflow_tools: WorkflowTools = Field(default_factory=WorkflowTools)
 
 
 class CycleOut(BaseModel):
@@ -256,4 +274,5 @@ class ProviderStatus(BaseModel):
     devin_error: str | None = None
     local_simulation_allowed: bool
     openai_configured: bool
+    compute: dict = {}
     error: str | None = None

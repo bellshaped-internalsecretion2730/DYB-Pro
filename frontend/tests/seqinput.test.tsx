@@ -62,15 +62,15 @@ describe("sequence loader stays honest about what loading means", () => {
         busy={false}
         onRenderStructure={vi.fn()}
         onCommitFile={vi.fn()}
-        onCreateTargetProject={vi.fn()}
+        onSetTarget={vi.fn()}
         onCompare={vi.fn()}
       />,
     );
 
-  it("states that target sequences feed docking, not the 3D view", () => {
+  it("states that target sequences feed AlphaFold and docking", () => {
     renderLoader();
-    fireEvent.click(screen.getByRole("button", { name: "sequences" }));
-    expect(screen.getByText(/target sequences feed docking features/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Protein + target" }));
+    expect(screen.getByText(/target sequence feeds AlphaFold and docking/)).toBeInTheDocument();
     expect(screen.getByText(/pasted sequences get no coordinates/)).toBeInTheDocument();
     expect(screen.getByLabelText("working sequence or structure")).toBeInTheDocument();
   });

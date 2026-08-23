@@ -52,17 +52,17 @@ export default function MetricStrip({
     }));
 
   const trend: MiniBar[] = versions
-    .filter((v) => Number.isFinite(v.scores.composite))
+    .filter((v) => Number.isFinite(v.scores.composite_score))
     .slice(0, 6)
     .map((v) => ({
       key: v.id,
       name: v.label ?? v.short_id,
-      value: v.scores.composite,
+      value: v.scores.composite_score,
       tone: v.passed_filters ? "accent" : "bad",
-      readout: v.scores.composite.toFixed(3),
+      readout: v.scores.composite_score.toFixed(3),
       tip: v.passed_filters
-        ? `${v.label ?? v.short_id}: composite ${v.scores.composite.toFixed(3)}, passed every filter`
-        : `${v.label ?? v.short_id}: composite ${v.scores.composite.toFixed(
+        ? `${v.label ?? v.short_id}: composite ${v.scores.composite_score.toFixed(3)}, passed every filter`
+        : `${v.label ?? v.short_id}: composite ${v.scores.composite_score.toFixed(
             3,
           )}, failed ${v.failed_filters.join(", ") || "a filter"}`,
     }));

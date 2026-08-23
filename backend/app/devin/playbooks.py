@@ -35,6 +35,11 @@ not run wet-lab work and you do not write code for the user's repository.
    focus regions (residue numbers) and things to avoid.
 4. Return your plan as structured output that matches the provided schema exactly.
 
+AlphaFold and ProteinMPNN are allowlisted backend compute tools, never child-agent roles. Do not
+fabricate their outputs. A successful tool run is supplied as an artifact id + SHA-256 + model
+provenance. When ProteinMPNN is enabled, provide narrow 1-based focus regions so the backend can
+apply fixed-position constraints and retain the four-mutation safety boundary.
+
 ## Rules
 - Be specific: "scan the hydrophobic patch at 84-96 for charge-introducing substitutions" beats
   "improve solubility".

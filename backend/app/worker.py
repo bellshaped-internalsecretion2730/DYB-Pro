@@ -25,6 +25,11 @@ celery_app.conf.update(
     result_serializer="json",
     accept_content=["json"],
     task_track_started=True,
+    # Cloudflare Containers may stop irregularly. A task is acknowledged only after its database
+    # transaction finishes, so managed Redis can redeliver work that lost its worker.
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    worker_prefetch_multiplier=1,
     task_time_limit=int(settings.devin_session_timeout_seconds) + 900,
     task_soft_time_limit=int(settings.devin_session_timeout_seconds) + 600,
     worker_hijack_root_logger=False,

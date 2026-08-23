@@ -52,6 +52,8 @@ describe("backend proxy", () => {
     const res = await pending;
 
     expect(res.status).toBe(504);
-    expect((await res.json()).detail).toContain("still running after 900s");
+    expect(await res.json()).toEqual(
+      expect.objectContaining({ detail: expect.stringContaining("still running after 900s") }),
+    );
   });
 });

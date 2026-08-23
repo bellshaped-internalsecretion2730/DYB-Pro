@@ -1,71 +1,79 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import AgentSwarm, { agentState } from "@/components/AgentSwarm";
 import AskPane from "@/components/AskPane";
 import FoldStrip from "@/components/FoldStrip";
-import IconRail, { type RailSection } from "@/components/IconRail";
+import IconRail from "@/components/IconRail";
 import ProteinViewer, { residueIndex } from "@/components/ProteinViewer";
 import { agents, cycle, nodes, project } from "./fixtures";
 
 describe("left zone — ask & agent control", () => {
-  const renderPane = (section: RailSection = "ask") =>
-    render(
+  const renderPane = (running = true) => {
+    const onRun = vi.fn();
+    const onWorkflowToolChange = vi.fn();
+    const view = render(
       <AskPane
-        section={section}
-        selectedLabel="GB1-v12"
-        handoffNote={null}
-        onHandoff={vi.fn()}
         projects={[project]}
         project={project}
-        cycles={[cycle]}
         cycle={cycle}
-        agents={agents}
         brief="Improve GB1 thermal stability"
         busy={null}
-        running
+        running={running}
+        workflowTools={{ alphafold: "auto", proteinmpnn: "auto" }}
         fileRef={createRef<HTMLInputElement>()}
+        inputTools={<button type="button">Protein + target</button>}
         onSelectProject={vi.fn()}
         onBriefChange={vi.fn()}
-        onRun={vi.fn()}
+        onWorkflowToolChange={onWorkflowToolChange}
+        onRun={onRun}
         onCancel={vi.fn()}
         onSeedDemo={vi.fn()}
         onUpload={vi.fn()}
-        onAttachCycle={vi.fn()}
       />,
     );
+    return { ...view, onRun, onWorkflowToolChange };
+  };
 
-  it("keeps the inline prompt and run controls in the ask section", () => {
+  it("keeps the research objective and run control in one chat surface", () => {
     renderPane();
     expect(screen.getByLabelText("research brief")).toHaveValue("Improve GB1 thermal stability");
-    expect(screen.getByRole("button", { name: "Cycle running…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Load demo project" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Autonomous run in progress/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Load demo" })).toBeEnabled();
     expect(screen.getByLabelText("project")).toHaveValue(project.id);
-    expect(screen.queryByLabelText("upload sequences or structures")).toBeNull();
+    expect(screen.getByRole("log", { name: "research conversation" })).toBeInTheDocument();
   });
 
-  it("keeps uploads reachable from the files section", () => {
-    renderPane("files");
+  it("keeps every molecular input reachable from the chat composer", () => {
+    renderPane();
     expect(screen.getByLabelText("upload sequences or structures")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Protein + target" })).toBeInTheDocument();
   });
 
-  it("renders the plan and offers no run control the API lacks", () => {
-    renderPane("agents");
-    expect(screen.getByText("sequence")).toBeInTheDocument();
-    expect(screen.getByText(/Round 3 · awaiting_agents/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel run" })).toBeEnabled();
-    // no placeholder run controls: every button in the pane is wired to a live handler
+  it("makes AlphaFold and ProteinMPNN automatic by default with explicit mode buttons", () => {
+    const { onWorkflowToolChange } = renderPane(false);
+    const alphaFold = screen.getByRole("group", { name: "AlphaFold workflow mode" });
+    const proteinMpnn = screen.getByRole("group", { name: "ProteinMPNN workflow mode" });
+    expect(within(alphaFold).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(proteinMpnn).getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
+
+    within(alphaFold).getByRole("button", { name: "Required" }).click();
+    expect(onWorkflowToolChange).toHaveBeenCalledWith("alphafold", "required");
+  });
+
+  it("shows real run progress and offers no control the API lacks", () => {
+    renderPane();
+    expect(screen.getByTestId("cycle-progress")).toHaveTextContent(/Round 3/);
+    expect(screen.getByRole("button", { name: "Cancel current run" })).toBeEnabled();
     ["Pause", "Resume", "Redirect", "Spawn"].forEach((c) => {
       expect(screen.queryByRole("button", { name: c })).toBeNull();
     });
   });
 
-  it("exposes history and a hand-off in their own sections", () => {
-    renderPane("history");
-    expect(screen.getByText(/Cycle r3/)).toBeInTheDocument();
-    renderPane("handoff");
-    expect(screen.getByText("From GB1-v12")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Hand off current brief" })).toBeDisabled();
+  it("submits a ready objective with Ctrl+Enter", () => {
+    const { onRun } = renderPane(false);
+    fireEvent.keyDown(screen.getByLabelText("research brief"), { key: "Enter", ctrlKey: true });
+    expect(onRun).toHaveBeenCalledOnce();
   });
 });
 
@@ -106,6 +114,9 @@ describe("right zone — pixel agent swarm", () => {
     expect(screen.getByTestId("plan-strategy").className).toContain("glass");
     screen.getAllByTestId("agent-feed").forEach((el) => expect(el.className).toContain("glass"));
     expect(screen.getByText("fanned out 4 children")).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: /Requested compute: AlphaFold auto, ProteinMPNN required/ }),
+    ).toBeInTheDocument();
   });
 
   it("maps every backend status to a state without inventing activity", () => {

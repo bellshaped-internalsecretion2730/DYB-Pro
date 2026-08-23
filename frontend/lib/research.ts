@@ -16,6 +16,7 @@ import {
   type SwarmHandoff,
   type WetlabPlan,
   type WetlabResult,
+  type WorkflowTools,
 } from "@/lib/api";
 
 /** Research Module + wet-lab loop calls, kept in one place so panes stay dumb. */
@@ -45,7 +46,13 @@ export const research = {
   /** End of a sitting: hand the current interaction state to the swarm as one autonomous run. */
   handoff: (
     projectId: string,
-    body: { commit_id?: string; host?: string; notes?: string; label_ids?: string[] },
+    body: {
+      commit_id?: string;
+      host?: string;
+      notes?: string;
+      label_ids?: string[];
+      workflow_tools?: WorkflowTools;
+    },
   ) =>
     api.post<SwarmHandoff>(`/lab/projects/${projectId}/research/handoff`, body),
 

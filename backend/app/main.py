@@ -33,9 +33,14 @@ Auth: send `X-API-Key`. Roles: `viewer` (read), `scientist` (run cycles), `admin
 async def lifespan(app: FastAPI):
     init_db()
     with session_scope() as db:
-        from app.seed import seed_all
+        from app.seed import seed_all, seed_users
 
-        seed_all(db)
+        if settings.app_env.strip().lower() in {"demo", "development", "test"}:
+            seed_all(db)
+        else:
+            # Production still needs the configured API-key identities, but it must not silently
+            # create demo biology or a demo drug program.
+            seed_users(db)
     logger.info("dyb-pro api ready (env=%s)", settings.app_env)
     yield
 

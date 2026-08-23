@@ -1,3 +1,4 @@
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
@@ -29,17 +30,26 @@ async function handleRequest(
     return Response.json({ detail: "method not allowed" }, { status: 405, headers: noStore() });
   }
 
-  const backend = (process.env.DYB_PRO_BACKEND_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
-  const target = `${backend}/api/${path.join("/")}${request.nextUrl.search}`;
+  const cloudflareEnv = getCloudflareEnv();
+  const configuredBackend = process.env.DYB_PRO_BACKEND_URL?.replace(/\/$/, "");
+  const backendBinding = configuredBackend ? undefined : cloudflareEnv?.BACKEND;
+  const backend = configuredBackend || "http://127.0.0.1:8000";
+  const target = `${backendBinding ? "http://dyb-pro-api" : backend}/api/${path.join("/")}${request.nextUrl.search}`;
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
-  headers.set(
-    "x-api-key",
+  const apiKey =
     request.headers.get("x-api-key") ||
-      process.env.DYB_PRO_API_KEY ||
-      "dyb-pro-demo-scientist",
-  );
+    cloudflareEnv?.DYB_PRO_API_KEY ||
+    process.env.DYB_PRO_API_KEY ||
+    (process.env.NODE_ENV === "production" ? undefined : "dyb-pro-demo-scientist");
+  if (!apiKey) {
+    return Response.json(
+      { detail: "the server-side DYB Pro API key is not configured" },
+      { status: 503, headers: noStore() },
+    );
+  }
+  headers.set("x-api-key", apiKey);
 
   const controller = new AbortController();
   const budgetMs = timeoutFor(path);
@@ -49,19 +59,23 @@ async function handleRequest(
     controller.abort();
   }, budgetMs);
   try {
-    const upstream = await fetch(target, {
+    const init: RequestInit & { duplex?: "half" } = {
       method: request.method,
       headers,
-      body: request.method === "GET" ? undefined : await request.arrayBuffer(),
+      body: request.method === "GET" ? undefined : request.body,
       signal: controller.signal,
       cache: "no-store",
-    });
+    };
+    if (request.body) init.duplex = "half";
+    const upstream = backendBinding
+      ? await backendBinding.fetch(new Request(target, init))
+      : await fetch(target, init);
     const responseHeaders = noStore();
     for (const name of ["content-type", "content-disposition"]) {
       const value = upstream.headers.get(name);
       if (value) responseHeaders.set(name, value);
     }
-    return new Response(await upstream.arrayBuffer(), {
+    return new Response(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
       headers: responseHeaders,
@@ -94,4 +108,13 @@ export const DELETE = handleRequest;
 
 function noStore(): Headers {
   return new Headers({ "Cache-Control": "private, no-store" });
+}
+
+function getCloudflareEnv(): CloudflareEnv | undefined {
+  try {
+    return getCloudflareContext().env;
+  } catch {
+    // Vitest and non-Cloudflare Next.js processes do not provide a request context.
+    return undefined;
+  }
 }

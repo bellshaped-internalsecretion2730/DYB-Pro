@@ -11,18 +11,26 @@ venv/
 # node / next
 node_modules/
 .next/
+.open-next/
+.wrangler/
 next-env.d.ts
 *.tsbuildinfo
 
 # local state
 .env
 .env.local
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+!**/.dev.vars.example
 *.sqlite
 *.sqlite3
 *.db
 artifacts/
 artifacts*/
 data/
+celerybeat-schedule*
+.tools/
 
 # os / editors
 .DS_Store

@@ -1,0 +1,108 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dyb-pro-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "containers": [
+    {
+      "name": "dyb-pro-backend",
+      "class_name": "DybProContainer",
+      "image": "../../backend/Dockerfile.cloudflare",
+      "image_build_context": "../../backend",
+      "max_instances": 1,
+      "instance_type": "standard-3"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DYB_PRO_CONTAINER",
+        "class_name": "DybProContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["DybProContainer"]
+    }
+  ],
+  "vars": {
+    "APP_ENV": "production",
+    "LOG_LEVEL": "INFO",
+    "CELERY_TASK_ALWAYS_EAGER": "false",
+    "ALLOW_LOCAL_SIMULATION": "false",
+    "DEVIN_API_BASE": "https://api.devin.ai",
+    "DEVIN_API_FLAVOR": "v3",
+    "DEVIN_APP_BASE": "https://app.devin.ai",
+    "DEVIN_CHILD_REPO": "https://github.com/yacine-baghli/DYB-Pro",
+    "DEVIN_ORCHESTRATOR_ACU_LIMIT": "8",
+    "DEVIN_CHILD_ACU_LIMIT": "5",
+    "DEVIN_POLL_INTERVAL_SECONDS": "10",
+    "DEVIN_SESSION_TIMEOUT_SECONDS": "1800",
+    "DEVIN_REQUEST_TIMEOUT_SECONDS": "60",
+    "AGENT_MAX_ATTEMPTS": "2",
+    "OPENAI_MODEL": "gpt-4.1-mini",
+    "OPENAI_VISION_MODEL": "gpt-4.1-mini",
+    "ALPHAFOLD_MODEL_VERSION": "alphafold2-nim",
+    "ALPHAFOLD_TIMEOUT_SECONDS": "3600",
+    "PROTEINMPNN_MODEL_VERSION": "proteinmpnn-nim",
+    "PROTEINMPNN_TIMEOUT_SECONDS": "900",
+    "PROTEINMPNN_NUM_SEQUENCES": "8",
+    "PROTEINMPNN_SAMPLING_TEMPERATURE": "0.1",
+    "PROTEINMPNN_RANDOM_SEED": "37",
+    "RESEARCH_DAEMON_ENABLED": "true",
+    "RESEARCH_DEBOUNCE_SECONDS": "5",
+    "RESEARCH_TICK_SECONDS": "15",
+    "RESEARCH_ACU_LIMIT": "3",
+    "RESEARCH_MAX_TOPICS_PER_EVENT": "4",
+    "DAEMON_ENABLED": "true",
+    "DAEMON_TICK_SECONDS": "5",
+    "DAEMON_DEBOUNCE_SECONDS": "6",
+    "DAEMON_MAX_ATTEMPTS": "3",
+    "DAEMON_CHILD_ACU_LIMIT": "4",
+    "DAEMON_CHILD_TIMEOUT_SECONDS": "420",
+    "DAEMON_LITERATURE_NETWORK": "true",
+    "PUBLIC_API_BASE": "http://localhost:8000",
+    "PHARMA_DAEMON_FREQUENCY": "daily",
+    "S3_BUCKET": "dyb-pro-artifacts",
+    "S3_REGION": "auto",
+    "LOCAL_ARTIFACT_DIR": "/tmp/dyb-pro-artifacts",
+    "DEFAULT_ACU_QUOTA": "200",
+    "DEFAULT_CYCLE_QUOTA": "25"
+  },
+  "secrets": {
+    "required": [
+      "DATABASE_URL",
+      "REDIS_URL",
+      "CORS_ORIGINS",
+      "DEVIN_API_KEY",
+      "DEVIN_ORG_ID",
+      "OPENAI_API_KEY",
+      "ALPHAFOLD_API_URL",
+      "ALPHAFOLD_API_KEY",
+      "PROTEINMPNN_API_URL",
+      "PROTEINMPNN_API_KEY",
+      "S3_ENDPOINT_URL",
+      "S3_ACCESS_KEY",
+      "S3_SECRET_KEY",
+      "SEED_ADMIN_API_KEY",
+      "SEED_SCIENTIST_API_KEY",
+      "SEED_VIEWER_API_KEY"
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.05
+    }
+  }
+}
