@@ -18,5 +18,18 @@ unmerged alternatives so they can be inspected, compared, or selectively cherry-
 `bati-5` was an upstream branch rather than a GitHub pull request. It is preserved as
 `archive/upstream-bati-5`.
 
+## Recreated review pull requests
+
+The historical variants explicitly selected for review are visible as draft pull requests in
+DYB-Pro:
+
+- [PR #1 — recovered bati-1 molecular research workbench](https://github.com/yacine-baghli/DYB-Pro/pull/1)
+- [PR #2 — recovered bati-3 lean protein workspace](https://github.com/yacine-baghli/DYB-Pro/pull/2)
+- [PR #3 — recovered bati-5 selection-aware protein agent](https://github.com/yacine-baghli/DYB-Pro/pull/3)
+
+PR #1 uses `pr/recovered-upstream-bati-1` because the original branch had no common ancestor with
+current `main`. Its bridge commit preserves the original tip as a second parent and reproduces its
+tree exactly. PRs #2 and #3 use the exact archived upstream heads directly.
+
 Original pull requests remain browsable at:
 `https://github.com/DAKSHPATELL/ForesterKanez/pulls?q=is%3Apr`
