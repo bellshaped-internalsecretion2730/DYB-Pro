@@ -16,6 +16,9 @@ os.environ.update(
         "CELERY_TASK_ALWAYS_EAGER": "true",
         "ALLOW_LOCAL_SIMULATION": "true",
         "DEVIN_POLL_INTERVAL_SECONDS": "0",
+        # Literature passes stay offline: the suite must not depend on OpenAlex/Semantic Scholar
+        # being reachable (or on their rate limits) to be deterministic.
+        "DAEMON_LITERATURE_NETWORK": "false",
         "SEED_ADMIN_API_KEY": "test-admin",
         "SEED_SCIENTIST_API_KEY": "test-scientist",
         "SEED_VIEWER_API_KEY": "test-viewer",

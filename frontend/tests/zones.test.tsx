@@ -44,8 +44,9 @@ describe("left zone — ask & agent control", () => {
     expect(screen.getByText("sequence")).toBeInTheDocument();
     expect(screen.getByText(/Round 3 · awaiting_agents/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel run" })).toBeEnabled();
+    // no placeholder run controls: every button in the pane is wired to a live handler
     ["Pause", "Resume", "Redirect", "Spawn"].forEach((c) => {
-      expect(screen.getByRole("button", { name: c })).toBeDisabled();
+      expect(screen.queryByRole("button", { name: c })).toBeNull();
     });
   });
 });

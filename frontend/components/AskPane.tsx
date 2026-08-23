@@ -4,8 +4,6 @@ import type { RefObject } from "react";
 import { agentState } from "@/components/AgentSwarm";
 import type { AgentRun, Cycle, Project } from "@/lib/api";
 
-const UNAVAILABLE = "Not exposed by the DYB Pro API — cancel is the only live run control";
-
 export default function AskPane({
   projects,
   project,
@@ -113,11 +111,9 @@ export default function AskPane({
           <button className="secondary" type="button" onClick={onCancel} disabled={!running}>
             Cancel run
           </button>
-          {["Pause", "Resume", "Redirect", "Spawn"].map((c) => (
-            <button className="ghost" type="button" key={c} disabled aria-disabled title={UNAVAILABLE}>
-              {c}
-            </button>
-          ))}
+          <span className="hint" style={{ margin: 0 }}>
+            Cancel is the only run control the DYB Pro API exposes
+          </span>
         </div>
         <div className="agent-state">
           <span
