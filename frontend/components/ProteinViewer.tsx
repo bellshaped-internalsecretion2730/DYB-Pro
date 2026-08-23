@@ -174,7 +174,14 @@ export default function ProteinViewer({
           <button className="tab" type="button" onClick={() => setZoom(1)}>
             Reset
           </button>
-          <span style={{ color: "var(--faint)" }}>Schematic backbone · commits carry no 3D coordinates</span>
+          <span
+            className="tip"
+            data-tip="a synthetic layout of the backbone, not coordinates — the 3D view renders the commit's coarse Cα trace"
+            tabIndex={0}
+            style={{ color: "var(--faint)" }}
+          >
+            2D schematic · switch to 3D for coordinates
+          </span>
         </div>
         <span>
           {node?.scores?.composite_score !== undefined

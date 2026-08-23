@@ -99,7 +99,7 @@ header.top {
 /* ------------------------------------------------------------ three zones */
 .workspace {
   display: grid;
-  grid-template-columns: var(--left-w) minmax(0, 1fr) var(--right-w);
+  grid-template-columns: 42px var(--left-w) minmax(0, 1fr) var(--right-w);
   height: calc(100vh - var(--top-h));
   min-height: 0;
 }
@@ -505,6 +505,11 @@ button.tab[aria-selected="true"] {
   animation: agent-pulse 2.4s ease-in-out infinite;
 }
 
+/* an agent the backend reports as not working reads as dimmed, never as colourful noise */
+.sprite.idle {
+  filter: saturate(0.45) opacity(0.72);
+}
+
 @keyframes agent-pulse {
   0%,
   100% {
@@ -746,15 +751,127 @@ code,
 }
 
 .structure-viewer {
-  height: min(360px, 50vh);
-  min-height: 240px;
-  max-height: 360px;
-  width: 100%;
-  margin-top: 10px;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
   background: var(--panel-2);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------- left icon rail */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  border-right: 1px solid var(--line);
+  background: var(--raised);
+}
+
+.rail-item {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.rail-item svg {
+  width: 19px;
+  height: 19px;
+}
+
+.rail-item:hover {
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.rail-item[aria-selected="true"] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.rail-kbd {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--faint);
+}
+
+/* ------------------------------------------------- sequence loader (top right) */
+.seq-loader {
+  position: relative;
+}
+
+.seq-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 6;
+  width: 340px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--raised);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+}
+
+.seq-panel .field {
+  display: grid;
+  gap: 4px;
+}
+
+.seq-panel textarea {
+  min-height: 54px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  resize: vertical;
+}
+
+.mini-input,
+.mini-select {
+  height: 22px;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  max-width: 132px;
+}
+
+/* -------------------------------------------------- metric strip under viewer */
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px 18px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--raised);
+  max-height: 156px;
+  overflow-y: auto;
 }
 
 .search-results {
@@ -1031,8 +1148,12 @@ code,
 
 @media (max-width: 1180px) {
   .workspace {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 42px minmax(0, 1fr);
     height: auto;
+  }
+
+  .rail {
+    grid-row: 1 / -1;
   }
 
   .pane {
@@ -1059,6 +1180,10 @@ code,
   }
 
   .viewer {
-    grid-template-rows: auto 420px auto auto;
+    grid-template-rows: auto 420px auto auto auto;
+  }
+
+  .seq-panel {
+    width: min(340px, 78vw);
   }
 }

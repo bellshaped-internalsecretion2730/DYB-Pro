@@ -1,16 +1,21 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import AgentSwarm, { agentState } from "@/components/AgentSwarm";
 import AskPane from "@/components/AskPane";
 import FoldStrip from "@/components/FoldStrip";
+import IconRail, { type RailSection } from "@/components/IconRail";
 import ProteinViewer, { residueIndex } from "@/components/ProteinViewer";
 import { agents, cycle, nodes, project } from "./fixtures";
 
 describe("left zone — ask & agent control", () => {
-  const renderPane = () =>
+  const renderPane = (section: RailSection = "ask") =>
     render(
       <AskPane
+        section={section}
+        selectedLabel="GB1-v12"
+        handoffNote={null}
+        onHandoff={vi.fn()}
         projects={[project]}
         project={project}
         cycles={[cycle]}
@@ -30,17 +35,22 @@ describe("left zone — ask & agent control", () => {
       />,
     );
 
-  it("keeps the inline prompt, run controls and uploads", () => {
+  it("keeps the inline prompt and run controls in the ask section", () => {
     renderPane();
     expect(screen.getByLabelText("research brief")).toHaveValue("Improve GB1 thermal stability");
     expect(screen.getByRole("button", { name: "Cycle running…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Load demo project" })).toBeEnabled();
-    expect(screen.getByLabelText("upload sequences or structures")).toBeInTheDocument();
     expect(screen.getByLabelText("project")).toHaveValue(project.id);
+    expect(screen.queryByLabelText("upload sequences or structures")).toBeNull();
   });
 
-  it("renders the orchestrator plan, history and only real run controls", () => {
-    renderPane();
+  it("keeps uploads reachable from the files section", () => {
+    renderPane("files");
+    expect(screen.getByLabelText("upload sequences or structures")).toBeInTheDocument();
+  });
+
+  it("renders the plan and offers no run control the API lacks", () => {
+    renderPane("agents");
     expect(screen.getByText("sequence")).toBeInTheDocument();
     expect(screen.getByText(/Round 3 · awaiting_agents/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel run" })).toBeEnabled();
@@ -48,6 +58,31 @@ describe("left zone — ask & agent control", () => {
     ["Pause", "Resume", "Redirect", "Spawn"].forEach((c) => {
       expect(screen.queryByRole("button", { name: c })).toBeNull();
     });
+  });
+
+  it("exposes history and a hand-off in their own sections", () => {
+    renderPane("history");
+    expect(screen.getByText(/Cycle r3/)).toBeInTheDocument();
+    renderPane("handoff");
+    expect(screen.getByText("From GB1-v12")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hand off current brief" })).toBeDisabled();
+  });
+});
+
+describe("left icon rail", () => {
+  it("switches sections by click and arrow keys", () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(<IconRail active="ask" onSelect={onSelect} />);
+    const agents = screen.getByTestId("rail-agents");
+    expect(agents).toHaveAttribute("aria-label", "Agent control and playbook");
+    agents.click();
+    expect(onSelect).toHaveBeenCalledWith("agents");
+
+    rerender(<IconRail active="ask" onSelect={onSelect} />);
+    fireEvent.keyDown(screen.getByTestId("icon-rail"), { key: "ArrowUp" });
+    expect(onSelect).toHaveBeenLastCalledWith("handoff");
+    fireEvent.keyDown(screen.getByTestId("icon-rail"), { key: "End" });
+    expect(onSelect).toHaveBeenLastCalledWith("handoff");
   });
 });
 
