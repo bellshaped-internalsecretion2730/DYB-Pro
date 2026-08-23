@@ -139,6 +139,10 @@ class DevinClient:
     def _flavor(self) -> str:
         return _RESOLVED_FLAVOR.get(self._flavor_cache_key, self.flavor)
 
+    def api_flavor(self) -> str:
+        """The flavor actually in use, which is v1 once a non-org key has been demoted."""
+        return self._flavor()
+
     def _demote_to_v1(self, path: str, status_code: int) -> None:
         logger.warning(
             "Devin %s on %s: this key is not organization-scoped, using the v1 API instead",

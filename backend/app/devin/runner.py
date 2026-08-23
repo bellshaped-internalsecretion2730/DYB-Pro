@@ -65,6 +65,9 @@ def provider_status(settings: Settings | None = None) -> dict:
         try:
             with DevinClient(settings) as client:
                 status["devin_reachable"] = bool(client.health()["ok"])
+                # The health probe resolves the flavor, so report what is really in use: a
+                # personal key is demoted to v1 and the UI must not claim org endpoints.
+                status["devin_api_flavor"] = client.api_flavor()
         except (DevinAPIError, DevinNotConfigured, OSError) as exc:
             status["devin_reachable"] = False
             status["devin_error"] = str(exc)[:300]
