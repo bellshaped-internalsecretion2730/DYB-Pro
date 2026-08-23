@@ -788,6 +788,11 @@ code,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.center-body.lab > .panel {
+  min-width: 0;
+  overflow-x: auto;
+}
+
 .panel.wide {
   grid-column: 1 / -1;
 }
@@ -877,15 +882,21 @@ code,
   gap: 5px;
 }
 
+/* Name and readout share a line; the track spans the full row so bar lengths
+   stay comparable between rows however narrow the column gets. */
 .barrow {
   display: grid;
-  grid-template-columns: minmax(96px, 148px) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name readout"
+    "track track";
   align-items: center;
-  gap: 8px;
+  gap: 3px 8px;
   font-size: 11.5px;
 }
 
 .barrow .name {
+  grid-area: name;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -893,6 +904,7 @@ code,
 }
 
 .bartrack {
+  grid-area: track;
   position: relative;
   height: 8px;
   border: 1px solid var(--line);
@@ -928,6 +940,7 @@ code,
 }
 
 .barrow .readout {
+  grid-area: readout;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--faint);

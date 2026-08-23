@@ -133,7 +133,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
             data-tip="Always-on loop: it watches version diffs, residue labels and incoming wet-lab results, then debounces them into research passes."
             tabIndex={0}
           >
-            research daemon
+            Research daemon
           </span>
         </h2>
         <div className="row" style={{ marginBottom: 10 }}>
@@ -159,22 +159,22 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
               })
             }
           >
-            {busy === "seed" ? "seeding campaign…" : "seed demo campaign"}
+            {busy === "seed" ? "Seeding campaign…" : "Seed demo campaign"}
           </button>
           {overview && (
             <span className="kpis" data-testid="campaign-summary">
               <span className="kpi">
                 <span className="k tip" data-tip={overview.campaign.name} tabIndex={0}>
-                  campaign
+                  Campaign
                 </span>
                 <span className="v">{overview.digest.version_count} versions</span>
               </span>
               <span className="kpi">
-                <span className="k">cached</span>
+                <span className="k">Cached</span>
                 <span className="v">{overview.digest.paper_count} papers</span>
               </span>
               <span className="kpi">
-                <span className="k">measured</span>
+                <span className="k">Measured</span>
                 <span className="v">{overview.digest.result_count} results</span>
               </span>
             </span>
@@ -206,7 +206,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
             data-tip="Residue labels are versioned research objects: saving one wakes the daemon and constrains the next proposal."
             tabIndex={0}
           >
-            label residues
+            Label residues
           </span>
         </h2>
         <LabelStudio
@@ -231,7 +231,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
             data-tip="Immutable evidence: every daemon event and every paper it cached, with the skills and citations behind them."
             tabIndex={0}
           >
-            research cache
+            Research cache
           </span>
         </h2>
         <ResearchFeed events={overview?.events || []} papers={papers} />
@@ -244,7 +244,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
             data-tip="Cheapest informative assay pack for this version, then measured results whose residuals recalibrate the model."
             tabIndex={0}
           >
-            wet-lab loop
+            Wet-lab loop
           </span>
         </h2>
         <WetlabLoop

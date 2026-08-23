@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 import { agentState } from "@/components/AgentSwarm";
 import type { AgentRun, Cycle, Project } from "@/lib/api";
 
-const UNAVAILABLE = "not exposed by the DYB Pro API — cancel is the only live run control";
+const UNAVAILABLE = "Not exposed by the DYB Pro API — cancel is the only live run control";
 
 export default function AskPane({
   projects,
@@ -46,7 +46,7 @@ export default function AskPane({
   return (
     <div data-testid="ask-pane">
       <div className="pane-header">
-        <span className="label">ask</span>
+        <span className="label">Ask</span>
         <span className="meta">⌘K commands</span>
       </div>
 
@@ -77,18 +77,18 @@ export default function AskPane({
         />
         <div className="row">
           <button type="button" onClick={onRun} disabled={!project || busy === "cycle" || running}>
-            {running ? "cycle running…" : "run design cycle"}
+            {running ? "Cycle running…" : "Run design cycle"}
           </button>
           {running && (
             <button className="secondary" type="button" onClick={onCancel}>
-              cancel
+              Cancel
             </button>
           )}
           <span className="kbd">⌘↵</span>
         </div>
         <div className="row">
           <button className="secondary" type="button" onClick={onSeedDemo} disabled={busy === "seed"}>
-            load demo project
+            Load demo project
           </button>
         </div>
         <input
@@ -108,12 +108,12 @@ export default function AskPane({
       </div>
 
       <div className="section tight">
-        <span className="label">agent control</span>
+        <span className="label">Agent control</span>
         <div className="row">
           <button className="secondary" type="button" onClick={onCancel} disabled={!running}>
-            cancel run
+            Cancel run
           </button>
-          {["pause", "resume", "redirect", "spawn"].map((c) => (
+          {["Pause", "Resume", "Redirect", "Spawn"].map((c) => (
             <button className="ghost" type="button" key={c} disabled aria-disabled title={UNAVAILABLE}>
               {c}
             </button>
@@ -125,7 +125,7 @@ export default function AskPane({
             style={{ background: running ? "var(--thinking)" : "var(--idle)" }}
           />
           <span>
-            {cycle ? `round ${cycle.round} · ${cycle.status}` : "no cycle attached"}
+            {cycle ? `Round ${cycle.round} · ${cycle.status}` : "No cycle attached"}
           </span>
           {cycle && (
             <span className="mono" style={{ color: "var(--faint)" }}>
@@ -136,8 +136,8 @@ export default function AskPane({
       </div>
 
       <div className="section tight">
-        <span className="label">playbook / tasks</span>
-        {planned.length === 0 && <span className="hint">the orchestrator plan lands here</span>}
+        <span className="label">Playbook / tasks</span>
+        {planned.length === 0 && <span className="hint">The orchestrator plan lands here</span>}
         <div className="list">
           {planned.map((p, i) => {
             const run = agents.find((a) => a.role === p.role);
@@ -148,7 +148,7 @@ export default function AskPane({
                   <span className="dot" style={{ background: state?.color || "var(--idle)", marginRight: 6 }} />
                   {p.role}
                 </span>
-                <span className="v">{state?.label || "planned"}</span>
+                <span className="v">{state?.label || "Planned"}</span>
               </div>
             );
           })}
@@ -156,8 +156,8 @@ export default function AskPane({
       </div>
 
       <div className="section tight">
-        <span className="label">recent briefs</span>
-        {cycles.length === 0 && <span className="hint">no cycles yet</span>}
+        <span className="label">Recent briefs</span>
+        {cycles.length === 0 && <span className="hint">No cycles yet</span>}
         <div className="list">
           {cycles.slice(0, 6).map((c) => (
             <button
@@ -175,7 +175,7 @@ export default function AskPane({
       </div>
 
       <div className="section tight">
-        <span className="label">session history</span>
+        <span className="label">Session history</span>
         <div className="list">
           {cycles.map((c) => (
             <button
@@ -186,12 +186,12 @@ export default function AskPane({
               onClick={() => onAttachCycle(c)}
             >
               <span className="k">
-                cycle r{c.round} · {c.status}
+                Cycle r{c.round} · {c.status}
               </span>
               <span className="v">{c.provider || "—"}</span>
             </button>
           ))}
-          {cycles.length === 0 && <span className="hint">run a cycle to build history</span>}
+          {cycles.length === 0 && <span className="hint">Run a cycle to build history</span>}
         </div>
       </div>
     </div>

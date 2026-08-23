@@ -266,18 +266,18 @@ export default function Workspace() {
   }, []);
 
   const commands: Command[] = [
-    { id: "run", label: "run design cycle", hint: "⌘↵", disabled: !project || running, run: runCycle },
-    { id: "cancel", label: "cancel running cycle", disabled: !running, run: cancelCycle },
-    { id: "seed", label: "load demo project", run: seedDemo },
-    { id: "upload", label: "upload sequence / structure", disabled: !project, run: () => fileRef.current?.click() },
-    { id: "tab-structure", label: "view protein viewer", run: () => setTab("structure") },
-    { id: "tab-lineage", label: "view version DAG", run: () => setTab("lineage") },
-    { id: "tab-shortlist", label: "view wet-lab shortlist", run: () => setTab("shortlist") },
-    { id: "tab-log", label: "view observation log", run: () => setTab("log") },
-    { id: "clear-compare", label: "exit version compare", disabled: !compareId, run: () => setCompareId(null) },
+    { id: "run", label: "Run design cycle", hint: "⌘↵", disabled: !project || running, run: runCycle },
+    { id: "cancel", label: "Cancel running cycle", disabled: !running, run: cancelCycle },
+    { id: "seed", label: "Load demo project", run: seedDemo },
+    { id: "upload", label: "Upload sequence / structure", disabled: !project, run: () => fileRef.current?.click() },
+    { id: "tab-structure", label: "View protein viewer", run: () => setTab("structure") },
+    { id: "tab-lineage", label: "View version DAG", run: () => setTab("lineage") },
+    { id: "tab-shortlist", label: "View wet-lab shortlist", run: () => setTab("shortlist") },
+    { id: "tab-log", label: "View observation log", run: () => setTab("log") },
+    { id: "clear-compare", label: "Exit version compare", disabled: !compareId, run: () => setCompareId(null) },
     {
       id: "refresh",
-      label: "refresh project",
+      label: "Refresh project",
       disabled: !project,
       run: () => {
         if (project) refreshProject(project.id).catch(fail);
@@ -291,13 +291,13 @@ export default function Workspace() {
         <div className="brand">
           DYB<span> Pro</span>
         </div>
-        <span className="tagline">pre-wetlab design OS</span>
+        <span className="tagline">Pre-wetlab design OS</span>
         <ProviderBadge provider={provider} />
         {provider?.openai_configured && <span className="badge">OpenAI analysis on</span>}
         <div className="grow" />
         <Link href="/pharmakon">Pharmakon drug programs →</Link>
         <button className="ghost" type="button" onClick={() => setPaletteOpen(true)}>
-          <span className="kbd">⌘K</span> command palette
+          <span className="kbd">⌘K</span> Command palette
         </button>
         <input
           type="text"
@@ -314,7 +314,7 @@ export default function Workspace() {
             window.location.reload();
           }}
         >
-          use key
+          Use key
         </button>
       </header>
 
@@ -363,14 +363,14 @@ export default function Workspace() {
               <div className="row">
                 {(
                   [
-                    ["structure", "protein viewer"],
-                    ["lineage", "version DAG"],
-                    ["shortlist", "wet-lab shortlist"],
-                    ["research", "research daemon"],
-                    ["log", "observation log"],
-                    ["3d-structure", "3d structure"],
-                    ["databases", "databases"],
-                    ["lab", "research lab"],
+                    ["structure", "Protein viewer"],
+                    ["lineage", "Version DAG"],
+                    ["shortlist", "Wet-lab shortlist"],
+                    ["research", "Research daemon"],
+                    ["log", "Observation log"],
+                    ["3d-structure", "3D structure"],
+                    ["databases", "Databases"],
+                    ["lab", "Research lab"],
                   ] as [CenterTab, string][]
                 ).map(([id, label]) => (
                   <button
@@ -385,7 +385,7 @@ export default function Workspace() {
                   </button>
                 ))}
               </div>
-              <span className="meta">{project ? project.name : "no project"}</span>
+              <span className="meta">{project ? project.name : "No project"}</span>
             </div>
 
             {tab === "structure" && (
@@ -481,7 +481,7 @@ export default function Workspace() {
                         <div>{o.summary}</div>
                       </div>
                     ))}
-                    {timeline.length === 0 && <p className="muted">no observations yet</p>}
+                    {timeline.length === 0 && <p className="muted">No observations yet</p>}
                   </div>
                 </section>
               </div>

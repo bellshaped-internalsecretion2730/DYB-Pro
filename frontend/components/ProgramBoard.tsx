@@ -48,7 +48,7 @@ export function GatePanel({
   onDecide: (approve: boolean) => void;
   busy: boolean;
 }) {
-  if (!gate) return <p className="muted">no gate evaluated yet — run a round</p>;
+  if (!gate) return <p className="muted">No gate evaluated yet — run a round</p>;
   const missing = gate.criteria.filter((c) => c.missing_evidence);
   return (
     <>
@@ -57,31 +57,31 @@ export function GatePanel({
           {DECISION_LABEL[gate.decision] ?? gate.decision}
         </span>
         <span className="muted">
-          score {gate.score.toFixed(2)} · stage {gate.stage} · autonomy L{gate.autonomy_level}
+          Score {gate.score.toFixed(2)} · stage {gate.stage} · autonomy L{gate.autonomy_level}
         </span>
       </div>
       <p style={{ marginTop: 0 }}>{gate.rationale}</p>
       {gate.requires_approval && gate.approval_status === "pending" && (
         <div className="row" style={{ marginBottom: 8 }}>
-          <span className="badge bad">human signature required</span>
+          <span className="badge bad">Human signature required</span>
           <span className="muted">{gate.approval_reason}</span>
           <button type="button" disabled={busy} onClick={() => onDecide(true)}>
-            approve
+            Approve
           </button>
           <button className="secondary" type="button" disabled={busy} onClick={() => onDecide(false)}>
-            reject
+            Reject
           </button>
         </div>
       )}
-      {gate.approval_status === "approved" && <span className="badge">approved by a human</span>}
-      {gate.approval_status === "rejected" && <span className="badge bad">rejected by a human</span>}
+      {gate.approval_status === "approved" && <span className="badge">Approved by a human</span>}
+      {gate.approval_status === "rejected" && <span className="badge bad">Rejected by a human</span>}
       <table>
         <thead>
           <tr>
-            <th>criterion</th>
-            <th>requirement</th>
-            <th>observed</th>
-            <th>blocking</th>
+            <th>Criterion</th>
+            <th>Requirement</th>
+            <th>Observed</th>
+            <th>Blocking</th>
           </tr>
         </thead>
         <tbody>
@@ -91,13 +91,13 @@ export function GatePanel({
               <td className="mono">{c.requirement}</td>
               <td className="mono">
                 {c.observed === null ? (
-                  <span className="muted">no evidence</span>
+                  <span className="muted">No evidence</span>
                 ) : (
                   c.observed
                 )}{" "}
-                {c.passed ? <span className="pill ok">pass</span> : <span className="pill no">fail</span>}
+                {c.passed ? <span className="pill ok">Pass</span> : <span className="pill no">Fail</span>}
               </td>
-              <td>{c.blocking ? "yes" : "no"}</td>
+              <td>{c.blocking ? "Yes" : "No"}</td>
             </tr>
           ))}
         </tbody>
@@ -128,18 +128,18 @@ export function MoleculeTable({
   candidateId?: string | null;
   onIngest: (molecule: ProgramMolecule) => void;
 }) {
-  if (molecules.length === 0) return <p className="muted">no molecules committed yet</p>;
+  if (molecules.length === 0) return <p className="muted">No molecules committed yet</p>;
   return (
     <table>
       <thead>
         <tr>
-          <th>commit</th>
+          <th>Commit</th>
           <th>SMILES</th>
-          <th>score</th>
+          <th>Score</th>
           <th>pKd (pred.)</th>
           <th>cLogP</th>
           <th>SA</th>
-          <th>verdict</th>
+          <th>Verdict</th>
           <th />
         </tr>
       </thead>
@@ -148,7 +148,7 @@ export function MoleculeTable({
           <tr key={m.id}>
             <td className="mono">
               {m.short_id}
-              {m.id === candidateId && <span className="pill ok">candidate</span>}
+              {m.id === candidateId && <span className="pill ok">Candidate</span>}
             </td>
             <td className="mono">{m.smiles}</td>
             <td>{m.composite_score.toFixed(3)}</td>
@@ -163,7 +163,7 @@ export function MoleculeTable({
             </td>
             <td>
               <button className="secondary" type="button" onClick={() => onIngest(m)}>
-                add assay result
+                Add assay result
               </button>
             </td>
           </tr>
@@ -175,7 +175,7 @@ export function MoleculeTable({
 
 export function ExperimentTable({ experiments }: { experiments: ProgramExperiment[] }) {
   if (experiments.length === 0)
-    return <p className="muted">no assay would change the current decision</p>;
+    return <p className="muted">No assay would change the current decision</p>;
   const total = experiments.reduce((sum, e) => sum + e.cost_usd, 0);
   return (
     <>
@@ -187,12 +187,12 @@ export function ExperimentTable({ experiments }: { experiments: ProgramExperimen
       <table>
         <thead>
           <tr>
-            <th>assay</th>
-            <th>endpoint</th>
-            <th>predicted</th>
-            <th>cost</th>
-            <th>days</th>
-            <th>falsifies</th>
+            <th>Assay</th>
+            <th>Endpoint</th>
+            <th>Predicted</th>
+            <th>Cost</th>
+            <th>Days</th>
+            <th>Falsifies</th>
           </tr>
         </thead>
         <tbody>
@@ -200,7 +200,7 @@ export function ExperimentTable({ experiments }: { experiments: ProgramExperimen
             <tr key={e.id}>
               <td>
                 {e.assay}
-                {e.blocking && <span className="pill no">blocking</span>}
+                {e.blocking && <span className="pill no">Blocking</span>}
               </td>
               <td className="mono">
                 {e.endpoint} ({e.unit})
@@ -224,25 +224,25 @@ export function EconomicsPanel({ detail }: { detail: ProgramDetail }) {
       <table>
         <tbody>
           <tr>
-            <td>spent so far (agents + platform + assays)</td>
+            <td>Spent so far (agents + platform + assays)</td>
             <td className="mono">{money(e.autonomous.total_cost_usd)}</td>
           </tr>
           <tr>
-            <td>human team baseline for the same stages</td>
+            <td>Human team baseline for the same stages</td>
             <td className="mono">{money(e.human_baseline.total_cost_usd)}</td>
           </tr>
           <tr>
-            <td>elapsed vs baseline</td>
+            <td>Elapsed vs baseline</td>
             <td className="mono">
               {e.autonomous.months_elapsed} vs {e.human_baseline.months} months
             </td>
           </tr>
           <tr>
-            <td>probability of reaching first-in-human (portfolio statistic)</td>
+            <td>Probability of reaching first-in-human (portfolio statistic)</td>
             <td className="mono">{(e.forward_look.probability_of_reaching_fih * 100).toFixed(1)}%</td>
           </tr>
           <tr>
-            <td>risk-adjusted value</td>
+            <td>Risk-adjusted value</td>
             <td className="mono">{money(e.forward_look.risk_adjusted_value_usd)}</td>
           </tr>
         </tbody>
@@ -275,7 +275,7 @@ export function DriftPanel({ detail }: { detail: ProgramDetail }) {
 }
 
 export function ResearchLog({ events }: { events: ProgramResearchEvent[] }) {
-  if (events.length === 0) return <p className="muted">no research events yet</p>;
+  if (events.length === 0) return <p className="muted">No research events yet</p>;
   return (
     <div className="timeline">
       {events.map((e) => (
@@ -287,7 +287,7 @@ export function ResearchLog({ events }: { events: ProgramResearchEvent[] }) {
           {e.citation ? (
             <div className="muted mono">{e.citation}</div>
           ) : (
-            <div className="muted">no citation — cannot move a gate</div>
+            <div className="muted">No citation — cannot move a gate</div>
           )}
         </div>
       ))}

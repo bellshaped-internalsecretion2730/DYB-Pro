@@ -105,11 +105,11 @@ export default function ProteinViewer({
     <div className="viewer" data-testid="protein-viewer">
       <div className="pane-header">
         <div className="row">
-          <strong style={{ fontSize: 12.5 }}>{node ? node.label || node.short_id : "no version selected"}</strong>
+          <strong style={{ fontSize: 12.5 }}>{node ? node.label || node.short_id : "No version selected"}</strong>
           {node && <span className="mono" style={{ color: "var(--faint)" }}>{node.short_id}</span>}
           {node && <span className="badge">{node.branch}</span>}
-          {node?.is_head && <span className="badge devin">head</span>}
-          {node && !node.passed_filters && <span className="badge sim">filtered</span>}
+          {node?.is_head && <span className="badge devin">Head</span>}
+          {node && !node.passed_filters && <span className="badge sim">Filtered</span>}
           {compareNode && (
             <span className="badge" style={{ borderColor: "var(--accent-2)", color: "var(--accent-2)" }}>
               vs {compareNode.label || compareNode.short_id}
@@ -123,11 +123,11 @@ export default function ProteinViewer({
             aria-selected={showLabels}
             onClick={() => setShowLabels((v) => !v)}
           >
-            labels
+            Labels
           </button>
           {compareNode && (
             <button className="tab" type="button" onClick={onClearCompare}>
-              exit compare
+              Exit compare
             </button>
           )}
         </div>
@@ -147,7 +147,7 @@ export default function ProteinViewer({
           <div className="viewer-empty">
             <span>Run a design cycle or pick a version below.</span>
             <span className="mono" style={{ fontSize: 10 }}>
-              the viewer renders the selected commit
+              The viewer renders the selected commit
             </span>
           </div>
         )}
@@ -166,20 +166,20 @@ export default function ProteinViewer({
       <div className="camera-bar">
         <div className="row">
           <button className="tab" type="button" onClick={() => setZoom((z) => Math.min(2.4, z + 0.2))}>
-            zoom in
+            Zoom in
           </button>
           <button className="tab" type="button" onClick={() => setZoom((z) => Math.max(0.6, z - 0.2))}>
-            zoom out
+            Zoom out
           </button>
           <button className="tab" type="button" onClick={() => setZoom(1)}>
-            reset
+            Reset
           </button>
-          <span style={{ color: "var(--faint)" }}>schematic backbone · commits carry no 3D coordinates</span>
+          <span style={{ color: "var(--faint)" }}>Schematic backbone · commits carry no 3D coordinates</span>
         </div>
         <span>
           {node?.scores?.composite_score !== undefined
-            ? `composite ${node.scores.composite_score.toFixed(3)}`
-            : "no score"}
+            ? `Composite ${node.scores.composite_score.toFixed(3)}`
+            : "No score"}
           {node?.agent_role ? ` · ${node.agent_role}` : ""}
           {node?.cycle_round ? ` · r${node.cycle_round}` : ""}
         </span>

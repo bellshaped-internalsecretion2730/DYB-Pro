@@ -64,7 +64,7 @@ export default function StructureViewer({ commitId }: { commitId: string | null 
       {message && <p className="hint">{message}</p>}
       {commitId && (
         <a href={api.downloadUrl(`/commits/${commitId}/structure`)} download>
-          download raw PDB
+          Download raw PDB
         </a>
       )}
       <div ref={containerRef} className="structure-viewer" aria-label="3D molecular structure viewer" />

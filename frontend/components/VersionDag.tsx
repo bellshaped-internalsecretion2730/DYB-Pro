@@ -109,12 +109,12 @@ export default function VersionDag({ graph }: { graph: Graph | null }) {
             <span className="badge">{selected.agent_role}</span>
             {selected.devin_session_url && (
               <a className="badge" href={selected.devin_session_url} target="_blank" rel="noreferrer">
-                session ↗
+                Session ↗
               </a>
             )}
           </div>
           <p className="muted" style={{ marginBottom: 4 }}>
-            {selected.mutations.filter(Boolean).join(", ") || "root commit"}
+            {selected.mutations.filter(Boolean).join(", ") || "Root commit"}
             {selected.failed_filters.length > 0 && ` · failed: ${selected.failed_filters.join(", ")}`}
           </p>
           <p style={{ margin: 0 }}>{selected.rationale || selected.message}</p>

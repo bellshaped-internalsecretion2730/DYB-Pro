@@ -42,7 +42,7 @@ export default function LearnedPane({
           </p>
           {driftBars.length > 0 ? (
             <>
-              <h3 className="subhead">in-silico vs wet-lab drift</h3>
+              <h3 className="subhead">In-silico vs wet-lab drift</h3>
               <MiniBars bars={driftBars} />
             </>
           ) : (
@@ -50,12 +50,12 @@ export default function LearnedPane({
               {learned.lessons.slice(0, 6).map((l) => (
                 <li key={l}>{l}</li>
               ))}
-              {learned.lessons.length === 0 && <li>no cross-version lessons yet</li>}
+              {learned.lessons.length === 0 && <li>No cross-version lessons yet</li>}
             </ul>
           )}
         </>
       ) : (
-        <p className="muted">no campaign knowledge yet</p>
+        <p className="muted">No campaign knowledge yet</p>
       )}
 
       <div className="row" style={{ marginTop: 12 }}>
@@ -65,14 +65,14 @@ export default function LearnedPane({
           onClick={onProposal}
           disabled={busy === "proposal"}
         >
-          {busy === "proposal" ? "proposing…" : "propose next version"}
+          {busy === "proposal" ? "Proposing…" : "Propose next version"}
         </button>
       </div>
 
       {proposal && !proposal.proposed && (
         <p className="muted" style={{ marginTop: 10 }} data-testid="proposal-blocked">
-          no next version proposed for {proposal.target_metric}:{" "}
-          {proposal.reason ?? "no candidate survived the filters"}
+          No next version proposed for {proposal.target_metric}:{" "}
+          {proposal.reason ?? "No candidate survived the filters"}
         </p>
       )}
 
@@ -80,20 +80,20 @@ export default function LearnedPane({
         <div style={{ marginTop: 10 }}>
           <h3 className="subhead">
             <span className="tip" data-tip={proposal.why_this_metric || ""} tabIndex={0}>
-              {proposal.proposed.label} · target {proposal.target_metric}
+              {proposal.proposed.label} · Target {proposal.target_metric}
             </span>
           </h3>
           <p className="tip" data-tip={proposal.proposed.rationale} tabIndex={0}>
-            mutations:{" "}
-            <span className="mono">{proposal.proposed.mutations.join(" + ") || "none"}</span>
+            Mutations:{" "}
+            <span className="mono">{proposal.proposed.mutations.join(" + ") || "None"}</span>
           </p>
           <table>
             <thead>
               <tr>
-                <th>predicted wet-lab</th>
-                <th>value</th>
+                <th>Predicted wet-lab</th>
+                <th>Value</th>
                 <th>± sd</th>
-                <th>method (skill)</th>
+                <th>Method (skill)</th>
               </tr>
             </thead>
             <tbody>
