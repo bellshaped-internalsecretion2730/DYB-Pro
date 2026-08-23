@@ -24,10 +24,12 @@ import {
   selectResidues,
   setColorTheme,
   setRepresentation,
+  setViewerBackground,
   structureSource,
   superposeLoaded,
   type ColorTheme,
   type Repr,
+  type ViewerBackground,
 } from "@/lib/molstar";
 import type { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 
@@ -43,6 +45,7 @@ const UNAVAILABLE: [string, string][] = [
 
 const REPRS: Repr[] = ["cartoon", "backbone", "spacefill"];
 const COLORS: ColorTheme[] = ["sequence-id", "chain-id", "residue-name", "hydrophobicity", "uniform"];
+const VIEWER_BACKGROUND_KEY = "dyb-pro.viewer-background";
 
 const COLOR_TIPS: Record<ColorTheme, string> = {
   "sequence-id": "colour ramps along the chain from N- to C-terminus",
@@ -86,6 +89,9 @@ export default function StructureViewer({
   const [pdb, setPdb] = useState<string | null>(null);
   const [repr, setRepr] = useState<Repr>("cartoon");
   const [color, setColor] = useState<ColorTheme>("sequence-id");
+  const [viewerBackground, setViewerBackgroundMode] = useState<ViewerBackground>("studio");
+  const [backgroundPreferenceLoaded, setBackgroundPreferenceLoaded] = useState(false);
+  const viewerBackgroundRef = useRef<ViewerBackground>("studio");
   const [showMutations, setShowMutations] = useState(true);
   const [range, setRange] = useState("");
   const [pair, setPair] = useState("");
@@ -100,6 +106,24 @@ export default function StructureViewer({
         .filter((n): n is number => n !== null && n > 0),
     [mutations],
   );
+
+  useEffect(() => {
+    const saved = window.localStorage?.getItem(VIEWER_BACKGROUND_KEY);
+    if (saved === "studio" || saved === "light") {
+      viewerBackgroundRef.current = saved;
+      setViewerBackgroundMode(saved);
+    }
+    setBackgroundPreferenceLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    viewerBackgroundRef.current = viewerBackground;
+    if (backgroundPreferenceLoaded) {
+      window.localStorage?.setItem(VIEWER_BACKGROUND_KEY, viewerBackground);
+    }
+    const plugin = pluginRef.current;
+    if (plugin) void setViewerBackground(plugin, viewerBackground);
+  }, [backgroundPreferenceLoaded, viewerBackground]);
 
   const parseRange = useCallback((value: string): [number, number] | null => {
     const m = /^\s*(\d+)\s*(?:[-–:]\s*(\d+))?\s*$/.exec(value);
@@ -127,6 +151,7 @@ export default function StructureViewer({
         return;
       }
       pluginRef.current = plugin;
+      void setViewerBackground(plugin, viewerBackgroundRef.current);
       if (typeof ResizeObserver !== "undefined") {
         observer = new ResizeObserver(() => {
           requestAnimationFrame(() => plugin.handleResize());
@@ -309,7 +334,7 @@ export default function StructureViewer({
   return (
     <div
       ref={viewerRef}
-      className={`viewer${isFullscreen && !showFullscreenPanels ? " viewer-chrome-hidden" : ""}`}
+      className={`viewer viewer-background-${viewerBackground}${isFullscreen && !showFullscreenPanels ? " viewer-chrome-hidden" : ""}`}
       data-testid="structure-3d"
       onKeyDown={onKeyDown}
       tabIndex={-1}
@@ -389,6 +414,18 @@ export default function StructureViewer({
               ))}
             </select>
           </label>
+          <button
+            className="tab tip viewer-light-toggle"
+            type="button"
+            aria-label="Light protein background"
+            aria-pressed={viewerBackground === "light"}
+            data-tip="Pure white protein canvas. Display only: coordinates and PDB exports do not change."
+            onClick={() =>
+              setViewerBackgroundMode((current) => (current === "light" ? "studio" : "light"))
+            }
+          >
+            light
+          </button>
         </div>
       </div>
 

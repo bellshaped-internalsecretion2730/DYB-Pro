@@ -406,6 +406,19 @@ button.tab[aria-selected="true"] {
   isolation: isolate;
 }
 
+.viewer-background-light,
+.viewer-background-light .viewer-stage,
+.viewer-background-light .structure-viewer,
+.viewer-background-light .viewer-empty {
+  background: #ffffff;
+}
+
+button.viewer-light-toggle[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--line-strong);
+  background: #ffffff;
+}
+
 .viewer-fullscreen-actions {
   grid-column: 1;
   grid-row: 2;

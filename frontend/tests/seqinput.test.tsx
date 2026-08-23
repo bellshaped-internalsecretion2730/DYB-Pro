@@ -139,4 +139,27 @@ describe("viewer guards", () => {
     expect(screen.queryByText("Agent activity")).toBeNull();
     getContext.mockRestore();
   });
+
+  it("offers a persistent white protein canvas without changing structure data", () => {
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const stored = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => stored.set(key, value),
+      },
+    });
+
+    render(<StructureViewer commitId={null} />);
+
+    const light = screen.getByRole("button", { name: "Light protein background" });
+    expect(light).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(light);
+    expect(light).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("structure-3d")).toHaveClass("viewer-background-light");
+    expect(stored.get("dyb-pro.viewer-background")).toBe("light");
+
+    getContext.mockRestore();
+  });
 });
