@@ -45,6 +45,7 @@ EVENT_KINDS = (
     "version_created",
     "label_added",
     "diff_detected",
+    "handoff",
     "literature",
     "metrics",
     "wetlab_plan",
@@ -462,6 +463,19 @@ def learned_summary(db: Session, rp: ResearchProject) -> dict:
                     f"{metric} {direction} {a:.3f} -> {b:.3f} "
                     f"from {first['label']} to {last['label']}"
                 )
+        if not lessons:
+            # An uploaded wild type carries no in-silico scores, so fall back to what the lab
+            # actually measured on both ends of the path.
+            for metric in sorted(set(first["measured"]) & set(last["measured"])):
+                a, b = first["measured"][metric], last["measured"][metric]
+                if isinstance(a, int | float) and isinstance(b, int | float) and not (
+                    isinstance(a, bool) or isinstance(b, bool)
+                ):
+                    direction = "improved" if b > a else "regressed"
+                    lessons.append(
+                        f"measured {metric} {direction} {a:.3f} -> {b:.3f} "
+                        f"from {first['label']} to {last['label']}"
+                    )
     drift_trend: list[dict] = []
     for d in drift_models(db, rp):
         history = list(d.history or [])

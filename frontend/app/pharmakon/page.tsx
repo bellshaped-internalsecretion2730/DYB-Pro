@@ -111,7 +111,7 @@ export default function PharmakonBoard() {
       "pkd",
     );
     if (!metricName) return;
-    const raw = window.prompt(`measured ${metricName} for ${molecule.short_id}`, "");
+    const raw = window.prompt(`Measured ${metricName} for ${molecule.short_id}`, "");
     if (raw === null) return;
     const value = Number(raw);
     if (Number.isNaN(value)) {
@@ -143,7 +143,7 @@ export default function PharmakonBoard() {
           <div className="brand">
             PHARMA<span>KON</span>
           </div>
-          <div className="tagline">autonomous drug-discovery program board</div>
+          <div className="tagline">Autonomous drug-discovery program board</div>
         </div>
         <ProviderBadge provider={provider} />
         <div className="grow" />
@@ -163,7 +163,7 @@ export default function PharmakonBoard() {
             window.location.reload();
           }}
         >
-          use key
+          Use key
         </button>
       </header>
 
@@ -195,21 +195,21 @@ export default function PharmakonBoard() {
               ))}
             </select>
             <button className="secondary" type="button" onClick={seedDemo} disabled={busy === "seed"}>
-              load demo program
+              Load demo program
             </button>
             <button
               type="button"
               disabled={!programId || busy !== null || pendingGate !== null}
               onClick={() => act("advance", () => api.post(`/pharma/programs/${programId}/advance`))}
             >
-              {busy === "advance" ? "running round…" : "run next round"}
+              {busy === "advance" ? "Running round…" : "Run next round"}
             </button>
-            {pendingGate && <span className="badge bad">a human must sign the open gate first</span>}
+            {pendingGate && <span className="badge bad">A human must sign the open gate first</span>}
           </div>
           {program && detail && (
             <>
               <p style={{ marginTop: 0 }}>
-                <b>{program.target_name}</b> · {program.indication || "indication not set"} ·{" "}
+                <b>{program.target_name}</b> · {program.indication || "Indication not set"} ·{" "}
                 {program.objective}
               </p>
               <StageLadder detail={detail} />
@@ -222,7 +222,7 @@ export default function PharmakonBoard() {
                 <span className="pill">{detail.daemon.mode} daemon</span>
               </div>
               <div className="row" style={{ marginTop: 8 }}>
-                <label htmlFor="autonomy">autonomy</label>
+                <label htmlFor="autonomy">Autonomy</label>
                 <select
                   id="autonomy"
                   value={program.autonomy_level}
@@ -285,10 +285,10 @@ export default function PharmakonBoard() {
           {programId && (
             <p className="hint">
               <a href={api.downloadUrl(`/pharma/programs/${programId}/export/molecules`)}>
-                export molecules as CSV
+                Export molecules as CSV
               </a>
               {" · "}
-              <a href={api.downloadUrl(`/pharma/programs/${programId}/dossier`)}>draft dossier JSON</a>
+              <a href={api.downloadUrl(`/pharma/programs/${programId}/dossier`)}>Draft dossier JSON</a>
             </p>
           )}
         </section>
@@ -309,12 +309,12 @@ export default function PharmakonBoard() {
 
         <section className="panel">
           <h2>Prediction vs measurement</h2>
-          {detail ? <DriftPanel detail={detail} /> : <p className="muted">no program selected</p>}
+          {detail ? <DriftPanel detail={detail} /> : <p className="muted">No program selected</p>}
         </section>
 
         <section className="panel">
           <h2>Program economics</h2>
-          {detail ? <EconomicsPanel detail={detail} /> : <p className="muted">no program selected</p>}
+          {detail ? <EconomicsPanel detail={detail} /> : <p className="muted">No program selected</p>}
         </section>
 
         <section className="panel">
@@ -325,7 +325,7 @@ export default function PharmakonBoard() {
           <div className="row" style={{ marginBottom: 6 }}>
             <input
               type="text"
-              placeholder="claim"
+              placeholder="Claim"
               value={claim}
               onChange={(e) => setClaim(e.target.value)}
               style={{ flex: 1 }}
@@ -334,7 +334,7 @@ export default function PharmakonBoard() {
           <div className="row" style={{ marginBottom: 6 }}>
             <input
               type="text"
-              placeholder="citation (DOI, patent, trial id)"
+              placeholder="Citation (DOI, patent, trial id)"
               value={citation}
               onChange={(e) => setCitation(e.target.value)}
               style={{ flex: 1 }}
@@ -342,7 +342,7 @@ export default function PharmakonBoard() {
           </div>
           <div className="row">
             <select value={metric} onChange={(e) => setMetric(e.target.value)}>
-              <option value="">no gate metric</option>
+              <option value="">No gate metric</option>
               <option value="target_evidence_score">target_evidence_score</option>
               <option value="druggability_score">druggability_score</option>
               <option value="freedom_to_operate">freedom_to_operate</option>
@@ -351,7 +351,7 @@ export default function PharmakonBoard() {
             </select>
             <input
               type="text"
-              placeholder="value"
+              placeholder="Value"
               value={metricValue}
               onChange={(e) => setMetricValue(e.target.value)}
               style={{ width: 100 }}
@@ -374,7 +374,7 @@ export default function PharmakonBoard() {
                 })
               }
             >
-              record evidence
+              Record evidence
             </button>
           </div>
         </section>

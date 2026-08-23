@@ -7,6 +7,11 @@ and open metadata, which is what the licences allow.
 When the network is unavailable or an API rate-limits us the skill returns ``degraded=True`` with
 the reason and whatever it did retrieve. It never invents a paper: a degraded literature pass is
 recorded as degraded so the daemon can retry instead of pretending the evidence exists.
+
+The search layer is as good as the indexes behind it (doi:10.48550/arXiv.2205.01833,
+doi:10.48550/arXiv.2301.10140, doi:10.1093/nar/gkab1112). The numeric extraction on top of them is
+an uncalibrated regex pass: no precision/recall has been measured for it, so extracted values are
+leads to be checked against the paper, never evidence in their own right. See :data:`EVIDENCE`.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import re
 import httpx
 from pydantic import BaseModel, Field
 
+from app.skills import evidence
 from app.skills.base import Metric, SkillSpec, collect, register
 
 VERSION = "1.1.0"
@@ -25,11 +31,61 @@ SEMANTIC_SCHOLAR = "https://api.semanticscholar.org/graph/v1/paper/search"
 PUBMED_SEARCH = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 PUBMED_SUMMARY = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
 
-CITATIONS = [
-    "Priem, Piwowar & Orr 2022, OpenAlex: a fully-open index of scholarly works (arXiv:2205.01833)",
-    "Kinney et al. 2023, The Semantic Scholar Open Data Platform (arXiv:2301.10140)",
-    "Sayers et al. 2022, Database resources of the NCBI (Nucleic Acids Res 50:D20)",
-]
+EVIDENCE = evidence.register(
+    "skill.literature",
+    (
+        evidence.Evidence(
+            key="literature.openalex",
+            claim="works, DOIs, venues and citation counts come from the OpenAlex index",
+            applicability="open scholarly metadata: titles, abstracts (where the licence allows), "
+                          "DOIs and citation counts; not full text",
+            error="coverage and metadata completeness vary by publisher and discipline; abstract "
+                  "availability is licence-dependent, so a missing hit is not evidence of absence",
+            calibration=evidence.ANCHORED,
+            source="Priem, Piwowar & Orr 2022, OpenAlex: a fully-open index of scholarly works, "
+                   "authors, sources, institutions and concepts (arXiv:2205.01833)",
+            doi="10.48550/arXiv.2205.01833",
+        ),
+        evidence.Evidence(
+            key="literature.semantic_scholar",
+            claim="a second independent index is queried and results are merged on DOI+title",
+            applicability="open metadata and abstracts from the Semantic Scholar Graph API",
+            error="rate limits and partial abstract coverage; two indexes reduce but do not remove "
+                  "the risk of missing a relevant paper",
+            calibration=evidence.ANCHORED,
+            source="Kinney et al. 2023, The Semantic Scholar Open Data Platform "
+                   "(arXiv:2301.10140)",
+            doi="10.48550/arXiv.2301.10140",
+        ),
+        evidence.Evidence(
+            key="literature.pubmed",
+            claim="biomedical coverage can be widened through NCBI E-utilities",
+            applicability="PubMed records via esearch/esummary; metadata only, no paywalled PDFs",
+            error="E-utilities enforce request rates and return summaries rather than full text; "
+                  "nothing is inferred beyond the returned fields",
+            calibration=evidence.ANCHORED,
+            source="Sayers et al. 2022, Database resources of the National Center for Biotechnology "
+                   "Information (Nucleic Acids Res 50:D20)",
+            doi="10.1093/nar/gkab1112",
+        ),
+        evidence.Evidence(
+            key="literature.metric_extraction",
+            claim="Tm/dTm/KD/yield/ddG/solubility values are regex-extracted from titles and abstracts",
+            applicability="English abstracts that state a value with its unit next to a recognised "
+                          "label; values only in tables, figures or full text are invisible",
+            error="no empirical calibration: precision and recall of these patterns have never been "
+                  "measured, units in abstracts are frequently ambiguous, and no assay context is "
+                  "captured. Extracted numbers are leads for a human to verify, not measurements",
+            calibration=evidence.PROXY,
+        ),
+    ),
+)
+
+CITATIONS = evidence.citations("skill.literature")
+
+
+def cite(*keys: str) -> tuple[str, ...]:
+    return tuple(evidence.record("skill.literature", key).citation() for key in keys)
 
 # Numeric claims worth extracting from an abstract. Each pattern captures the value.
 METRIC_PATTERNS: list[tuple[str, str, str]] = [
@@ -329,7 +385,7 @@ def run(payload: LiteratureInput) -> LiteratureOutput:
                 unit="count",
                 method="OpenAlex/Semantic Scholar metadata search, DOI+title de-duplication",
                 skill="skill.literature",
-                citations=tuple(CITATIONS[:2]),
+                citations=cite("literature.openalex", "literature.semantic_scholar"),
             ),
             Metric(
                 name="numeric_claims_extracted",
@@ -337,6 +393,7 @@ def run(payload: LiteratureInput) -> LiteratureOutput:
                 unit="count",
                 method="regex extraction of Tm/KD/yield/ddG/solubility values from titles and abstracts",
                 skill="skill.literature",
+                citations=cite("literature.metric_extraction"),
             ),
         ]
     )

@@ -17,6 +17,7 @@ import SequenceLoader from "@/components/SequenceLoader";
 import ShortlistPanel from "@/components/ShortlistPanel";
 import StructureViewer from "@/components/StructureViewer";
 import VersionDag from "@/components/VersionDag";
+import { research as lab } from "@/lib/research";
 import {
   api,
   apiKey,
@@ -36,12 +37,12 @@ const TERMINAL = ["committed", "partial", "failed", "cancelled"];
 type CenterTab = "structure" | "lineage" | "shortlist" | "research" | "lab" | "data";
 
 const CENTER_TABS: [CenterTab, string, string][] = [
-  ["structure", "structure", "the selected version in 3D, with its sequence and scores"],
-  ["lineage", "lineage", "every design as an immutable commit: parent, agent, prompt, citations"],
-  ["shortlist", "shortlist", "ranked wet-lab candidates for the attached cycle"],
-  ["research", "research", "the always-live research daemon and the append-only observation log"],
-  ["lab", "lab", "labels, evidence, wet-lab loop and what the campaign learned"],
-  ["data", "data", "public database search with the upstream source shown"],
+  ["structure", "Structure", "the selected version in 3D, with its sequence and scores"],
+  ["lineage", "Lineage", "every design as an immutable commit: parent, agent, prompt, citations"],
+  ["shortlist", "Shortlist", "ranked wet-lab candidates for the attached cycle"],
+  ["research", "Research", "the always-live research daemon and the append-only observation log"],
+  ["lab", "Lab", "labels, evidence, wet-lab loop and what the campaign learned"],
+  ["data", "Data", "public database search with the upstream source shown"],
 ];
 
 export default function Workspace() {
@@ -64,6 +65,7 @@ export default function Workspace() {
   const [view, setView] = useState<"3d" | "schematic">("3d");
   const [pasted, setPasted] = useState<{ text: string; name: string } | null>(null);
   const [marked, setMarked] = useState<number[]>([]);
+  const [handoffNote, setHandoffNote] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [compareId, setCompareId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -228,27 +230,35 @@ export default function Workspace() {
   }
 
   /**
-   * Hand-off uses the two autonomy entry points the API actually has: a design cycle for the
-   * current brief, and a research-daemon refresh anchored on the selected version.
+   * Hand-off uses the two autonomy entry points the API actually has: the research handoff task
+   * for the selected version, and a design cycle for the current brief.
    */
   async function handoff() {
     if (!project) return;
     setBusy("handoff");
     setError(null);
     setShortlist(null);
+    setHandoffNote(null);
     try {
+      let note = "";
+      try {
+        const queued = await lab.handoff(project.id, {
+          commit_id: selectedId ?? undefined,
+          notes: brief || project.goal,
+        });
+        note = `Queued ${queued.daemon_task.kind} (${queued.daemon_task.status}) for ${
+          queued.handoff.commit_label || queued.handoff.commit_id.slice(0, 8)
+        }`;
+      } catch {
+        /* the lab daemon is optional; the cycle below is the hand-off that always exists */
+      }
       const created = await api.post<Cycle>(`/projects/${project.id}/cycles`, {
         brief: brief || project.goal,
         branch: "main",
       });
       setCycles((rows) => [created, ...rows.filter((c) => c.id !== created.id)]);
       await attachCycle(created);
-      const anchor = selectedId ? `?commit_id=${selectedId}` : "";
-      try {
-        await api.post(`/lab/projects/${project.id}/research/refresh${anchor}`);
-      } catch {
-        /* the lab daemon is optional; the cycle is the hand-off that matters */
-      }
+      setHandoffNote(`${note ? `${note} · ` : ""}cycle round ${created.round} is ${created.status}`);
       await refreshProject(project.id);
       await loadProjects();
     } catch (e) {
@@ -312,22 +322,22 @@ export default function Workspace() {
   }, []);
 
   const commands: Command[] = [
-    { id: "run", label: "run design cycle", hint: "⌘↵", disabled: !project || running, run: runCycle },
-    { id: "cancel", label: "cancel running cycle", disabled: !running, run: cancelCycle },
-    { id: "seed", label: "load demo project", run: seedDemo },
-    { id: "upload", label: "upload sequence / structure", disabled: !project, run: () => fileRef.current?.click() },
-    { id: "handoff", label: "hand off to the agent swarm", disabled: !project || running, run: handoff },
-    { id: "tab-structure", label: "view 3D structure", run: () => setTab("structure") },
-    { id: "tab-lineage", label: "view version DAG", run: () => setTab("lineage") },
-    { id: "tab-shortlist", label: "view wet-lab shortlist", run: () => setTab("shortlist") },
-    { id: "tab-research", label: "view research daemon and log", run: () => setTab("research") },
-    { id: "view-3d", label: "show the 3D viewer", run: () => setView("3d") },
-    { id: "view-schematic", label: "show the 2D schematic", run: () => setView("schematic") },
-    { id: "clear-pasted", label: "unload pasted structure", disabled: !pasted, run: () => setPasted(null) },
-    { id: "clear-compare", label: "exit version compare", disabled: !compareId, run: () => setCompareId(null) },
+    { id: "run", label: "Run design cycle", hint: "⌘↵", disabled: !project || running, run: runCycle },
+    { id: "cancel", label: "Cancel running cycle", disabled: !running, run: cancelCycle },
+    { id: "seed", label: "Load demo project", run: seedDemo },
+    { id: "upload", label: "Upload sequence / structure", disabled: !project, run: () => fileRef.current?.click() },
+    { id: "handoff", label: "Hand off to the agent swarm", disabled: !project || running, run: handoff },
+    { id: "tab-structure", label: "View 3D structure", run: () => setTab("structure") },
+    { id: "tab-lineage", label: "View version DAG", run: () => setTab("lineage") },
+    { id: "tab-shortlist", label: "View wet-lab shortlist", run: () => setTab("shortlist") },
+    { id: "tab-research", label: "View research daemon and log", run: () => setTab("research") },
+    { id: "view-3d", label: "Show the 3D viewer", run: () => setView("3d") },
+    { id: "view-schematic", label: "Show the 2D schematic", run: () => setView("schematic") },
+    { id: "clear-pasted", label: "Unload pasted structure", disabled: !pasted, run: () => setPasted(null) },
+    { id: "clear-compare", label: "Exit version compare", disabled: !compareId, run: () => setCompareId(null) },
     {
       id: "refresh",
-      label: "refresh project",
+      label: "Refresh project",
       disabled: !project,
       run: () => {
         if (project) refreshProject(project.id).catch(fail);
@@ -341,13 +351,13 @@ export default function Workspace() {
         <div className="brand">
           DYB<span> Pro</span>
         </div>
-        <span className="tagline">pre-wetlab design OS</span>
+        <span className="tagline">Pre-wetlab design OS</span>
         <ProviderBadge provider={provider} />
         {provider?.openai_configured && <span className="badge">OpenAI analysis on</span>}
         <div className="grow" />
         <Link href="/pharmakon">Pharmakon drug programs →</Link>
         <button className="ghost" type="button" onClick={() => setPaletteOpen(true)}>
-          <span className="kbd">⌘K</span> command palette
+          <span className="kbd">⌘K</span> Command palette
         </button>
         <input
           type="text"
@@ -364,7 +374,7 @@ export default function Workspace() {
             window.location.reload();
           }}
         >
-          use key
+          Use key
         </button>
       </header>
 
@@ -383,6 +393,7 @@ export default function Workspace() {
           <AskPane
             section={rail}
             selectedLabel={selected?.label ?? selected?.short_id ?? null}
+            handoffNote={handoffNote}
             onHandoff={handoff}
             projects={projects}
             project={project}
@@ -484,7 +495,7 @@ export default function Workspace() {
                   }}
                   onCompare={setMarked}
                 />
-                <span className="meta">{project ? project.name : "no project"}</span>
+                <span className="meta">{project ? project.name : "No project"}</span>
               </div>
             </div>
 
@@ -579,7 +590,7 @@ export default function Workspace() {
                         <div>{o.summary}</div>
                       </div>
                     ))}
-                    {timeline.length === 0 && <p className="muted">no observations yet</p>}
+                    {timeline.length === 0 && <p className="muted">No observations yet</p>}
                   </div>
                 </section>
               </div>

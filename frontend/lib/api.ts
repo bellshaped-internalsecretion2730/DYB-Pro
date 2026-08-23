@@ -543,6 +543,35 @@ export type LabDaemonStatus = {
   tasks: DaemonTask[];
 };
 
+/** What the backend actually queued when the scientist handed the sitting to the swarm. */
+export type SwarmHandoff = {
+  handoff: {
+    commit_id: string;
+    commit_label: string;
+    host: string;
+    notes: string;
+    label_ids: string[];
+    unknown_label_ids: string[];
+  };
+  event_id: string;
+  daemon_task: {
+    id: string;
+    kind: string;
+    status: string;
+    commit_id?: string | null;
+    coalesced_into?: string | null;
+    run_after: string;
+  };
+  provider: {
+    devin_configured: boolean;
+    local_simulation_allowed: boolean;
+    provider?: string | null;
+    [key: string]: unknown;
+  };
+  devin_session_url?: string | null;
+  daemon: LabDaemonStatus;
+};
+
 export type LabResearchEvent = {
   id: string;
   sequence_no: number;

@@ -63,6 +63,8 @@ HOSTS = {
                            "yield_factor": 0.5, "notes": "glycosylation competent, higher cost"},
 }
 
+DEFAULT_HOST = "E. coli BL21(DE3)"
+
 BASELINE_YIELD_MG_L = 45.0
 
 
@@ -328,7 +330,7 @@ def build_plan(
         for m in (commit.mutations or [])
         if m.get("mt") and m.get("position")
     ]
-    cons = packlib.construct(sequence, commit.label or commit.id[:8])
+    cons = packlib.construct(sequence, commit.label or commit.id[:8], host=host)
     constructs = [
         {
             **cons,

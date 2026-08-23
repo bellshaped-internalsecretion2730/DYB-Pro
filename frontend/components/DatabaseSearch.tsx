@@ -47,12 +47,12 @@ export default function DatabaseSearch() {
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="protein or compound name"
+          placeholder="Protein or compound name"
           aria-label="database search query"
           style={{ flex: 1, minWidth: 180 }}
         />
         <button type="submit" disabled={busy}>
-          {busy ? "searching..." : "search"}
+          {busy ? "Searching…" : "Search"}
         </button>
       </form>
       {error && <p className="err">{error}</p>}

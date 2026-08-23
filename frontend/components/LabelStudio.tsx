@@ -56,7 +56,7 @@ export default function LabelStudio({
   const [note, setNote] = useState("");
   const [parent, setParent] = useState("");
 
-  if (!commit) return <p className="muted">select a version to label residues</p>;
+  if (!commit) return <p className="muted">Select a version to label residues</p>;
 
   const byResidue = new Map<number, string>();
   for (const lb of labels?.labels || []) {
@@ -111,7 +111,7 @@ export default function LabelStudio({
             <button
               key={pos}
               type="button"
-              title={`residue ${pos} ${aa}${existing ? ` · ${existing}` : ""}`}
+              title={`Residue ${pos} ${aa}${existing ? ` · ${existing}` : ""}`}
               onClick={() => toggle(pos)}
               className={`residue${isSel ? " sel" : ""}`}
               style={existing ? { borderColor: colourFor(existing), color: colourFor(existing) } : undefined}
@@ -131,7 +131,7 @@ export default function LabelStudio({
         </select>
         <input
           type="text"
-          placeholder="label name (e.g. hydrophobic patch)"
+          placeholder="Label name (e.g. hydrophobic patch)"
           value={name}
           onChange={(e) => setName(e.target.value)}
           style={{ maxWidth: 260 }}
@@ -147,7 +147,7 @@ export default function LabelStudio({
       </div>
       <textarea
         style={{ marginTop: 8, minHeight: 60 }}
-        placeholder="free-text scientific note the daemon will read on the next pass"
+        placeholder="Free-text scientific note the daemon will read on the next pass"
         value={note}
         onChange={(e) => setNote(e.target.value)}
       />
@@ -158,21 +158,21 @@ export default function LabelStudio({
           onClick={submit}
           disabled={selected.length === 0 || busy === "label"}
         >
-          {busy === "label" ? "saving…" : `save label (${selected.length} residues)`}
+          {busy === "label" ? "Saving…" : `Save label (${selected.length} residues)`}
         </button>
         {selected.length > 0 && (
           <button type="button" className="secondary" onClick={() => setSelected([])}>
-            clear selection
+            Clear selection
           </button>
         )}
         <span className="muted mono">{selected.join(", ")}</span>
       </div>
       <div style={{ marginTop: 12 }}>
-        <h3 className="subhead">labels on this version</h3>
+        <h3 className="subhead">Labels on this version</h3>
         {labels && labels.tree.length > 0 ? (
           <LabelTree nodes={labels.tree} />
         ) : (
-          <p className="muted">none yet</p>
+          <p className="muted">None yet</p>
         )}
       </div>
     </div>

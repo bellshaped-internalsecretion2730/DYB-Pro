@@ -65,6 +65,9 @@ def provider_status(settings: Settings | None = None) -> dict:
         try:
             with DevinClient(settings) as client:
                 status["devin_reachable"] = bool(client.health()["ok"])
+                # The health probe resolves the flavor, so report what is really in use: a
+                # personal key is demoted to v1 and the UI must not claim org endpoints.
+                status["devin_api_flavor"] = client.api_flavor()
         except (DevinAPIError, DevinNotConfigured, OSError) as exc:
             status["devin_reachable"] = False
             status["devin_error"] = str(exc)[:300]
@@ -82,7 +85,11 @@ def reconcile_playbooks(db: Session, client: DevinClient | None = None) -> dict[
     owns_client = client is None
     client = client or DevinClient(settings)
     try:
-        remote = {p.get("title"): p.get("playbook_id") for p in client.list_playbooks()}
+        try:
+            remote = {p.get("title"): p.get("playbook_id") for p in client.list_playbooks()}
+        except DevinNotConfigured as exc:
+            logger.info("playbooks unavailable on this key (%s); running without them", exc)
+            return {}
         mapping: dict[str, str] = {}
         for spec in pb.all_specs():
             role = spec.slug.removeprefix(f"{pb.SLUG_PREFIX}-").removeprefix("agent-")
@@ -94,7 +101,14 @@ def reconcile_playbooks(db: Session, client: DevinClient | None = None) -> dict[
             playbook_id = remote.get(spec.title)
             if not playbook_id:
                 schema = PLAN_SCHEMA if role == "orchestrator" else schema_for(role)
-                created = client.create_playbook(spec.title, spec.body, schema)
+                try:
+                    created = client.create_playbook(spec.title, spec.body, schema)
+                except DevinNotConfigured as exc:
+                    # A personal key cannot manage org playbooks. Real sessions still run: every
+                    # role prompt already carries its instructions and output schema inline.
+                    logger.info("playbooks unavailable on this key (%s); running without them", exc)
+                    db.flush()
+                    return mapping
                 playbook_id = created.get("playbook_id")
                 logger.info("created Devin playbook %s -> %s", spec.title, playbook_id)
             if not playbook_id:

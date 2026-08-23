@@ -34,7 +34,7 @@ function EventRow({ event }: { event: ResearchEvent }) {
         <div className="muted">{driftLine(event.drift)}</div>
         {event.findings.slice(0, 4).map((f) => (
           <div key={f.topic_key} className="muted">
-            {f.from_cache ? "cached" : "researched"} · {f.topic}
+            {f.from_cache ? "Cached" : "Researched"} · {f.topic}
             {f.findings[0]?.citation ? ` — ${f.findings[0].citation}` : ""}
           </div>
         ))}
@@ -64,17 +64,17 @@ export default function ResearchPane({
     <div>
       <div className="row" style={{ marginBottom: 10 }}>
         <span className={daemon.enabled ? "pill ok" : "pill no"}>
-          daemon {daemon.enabled ? "live" : "off"}
+          Daemon {daemon.enabled ? "live" : "off"}
         </span>
-        <span className="badge">{daemon.provider || "no provider configured"}</span>
+        <span className="badge">{daemon.provider || "No provider configured"}</span>
         <span className="badge">{daemon.queued} queued</span>
         <span className="badge">{daemon.running} running</span>
         {daemon.failed > 0 && <span className="pill no">{daemon.failed} failed</span>}
         <span className="badge">
-          debounce {daemon.debounce_seconds}s · tick {daemon.tick_seconds}s
+          Debounce {daemon.debounce_seconds}s · tick {daemon.tick_seconds}s
         </span>
         <span className="badge">
-          cache {cache.topics} topics · {cache.reuses} reuses
+          Cache {cache.topics} topics · {cache.reuses} reuses
         </span>
         {session?.session_url && (
           <a className="badge" href={session.session_url} target="_blank" rel="noreferrer">
@@ -82,7 +82,7 @@ export default function ResearchPane({
           </a>
         )}
         <button onClick={onTrigger} disabled={busy}>
-          {busy ? "queueing…" : "research now"}
+          {busy ? "Queueing…" : "Research now"}
         </button>
       </div>
       <p className="hint">
@@ -106,7 +106,7 @@ export default function ResearchPane({
           {events.length === 0 && (
             <tr>
               <td colSpan={4} className="muted">
-                nothing has changed in this lineage yet
+                Nothing has changed in this lineage yet
               </td>
             </tr>
           )}

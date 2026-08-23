@@ -6,11 +6,11 @@ import type { RailSection } from "@/components/IconRail";
 import type { AgentRun, Cycle, Project } from "@/lib/api";
 
 const TITLES: Record<RailSection, string> = {
-  ask: "ask",
-  agents: "agents",
-  history: "history",
-  files: "files",
-  handoff: "handoff",
+  ask: "Ask",
+  agents: "Agents",
+  history: "History",
+  files: "Files",
+  handoff: "Handoff",
 };
 
 export default function AskPane({
@@ -25,6 +25,7 @@ export default function AskPane({
   running,
   fileRef,
   selectedLabel,
+  handoffNote,
   onSelectProject,
   onBriefChange,
   onRun,
@@ -45,6 +46,7 @@ export default function AskPane({
   running: boolean;
   fileRef: RefObject<HTMLInputElement | null>;
   selectedLabel: string | null;
+  handoffNote: string | null;
   onSelectProject: (p: Project) => void;
   onBriefChange: (value: string) => void;
   onRun: () => void;
@@ -91,18 +93,18 @@ export default function AskPane({
           />
           <div className="row">
             <button type="button" onClick={onRun} disabled={!project || busy === "cycle" || running}>
-              {running ? "cycle running…" : "run design cycle"}
+              {running ? "Cycle running…" : "Run design cycle"}
             </button>
             {running && (
               <button className="secondary" type="button" onClick={onCancel}>
-                cancel
+                Cancel
               </button>
             )}
             <span className="kbd">⌘↵</span>
           </div>
           <div className="row">
             <button className="secondary" type="button" onClick={onSeedDemo} disabled={busy === "seed"}>
-              load demo project
+              Load demo project
             </button>
           </div>
         </div>
@@ -111,22 +113,22 @@ export default function AskPane({
       {section === "agents" && (
         <>
           <div className="section tight">
-            <span className="label">run control</span>
+            <span className="label">Run control</span>
             <div className="row">
               <button className="secondary" type="button" onClick={onCancel} disabled={!running}>
-                cancel run
+                Cancel run
               </button>
               <span
                 className="hint tip"
                 data-tip="the API exposes cancel only — there is no pause, resume, redirect or spawn route, so no button pretends to offer them"
                 tabIndex={0}
               >
-                cancel is the only live control
+                Cancel is the only live control
               </span>
             </div>
             <div className="agent-state">
               <span className="dot" style={{ background: running ? "var(--thinking)" : "var(--idle)" }} />
-              <span>{cycle ? `round ${cycle.round} · ${cycle.status}` : "no cycle attached"}</span>
+              <span>{cycle ? `Round ${cycle.round} · ${cycle.status}` : "No cycle attached"}</span>
               {cycle && (
                 <span className="mono" style={{ color: "var(--faint)" }}>
                   {cycle.acus_used}/{cycle.acu_limit} ACU
@@ -136,8 +138,8 @@ export default function AskPane({
           </div>
 
           <div className="section tight">
-            <span className="label">playbook / tasks</span>
-            {planned.length === 0 && <span className="hint">the orchestrator plan lands here</span>}
+            <span className="label">Playbook / tasks</span>
+            {planned.length === 0 && <span className="hint">The orchestrator plan lands here</span>}
             <div className="list">
               {planned.map((p, i) => {
                 const run = agents.find((a) => a.role === p.role);
@@ -151,7 +153,7 @@ export default function AskPane({
                       />
                       {p.role}
                     </span>
-                    <span className="v">{state?.label || "planned"}</span>
+                    <span className="v">{state?.label || "Planned"}</span>
                   </div>
                 );
               })}
@@ -163,8 +165,8 @@ export default function AskPane({
       {section === "history" && (
         <>
           <div className="section tight">
-            <span className="label">recent briefs</span>
-            {cycles.length === 0 && <span className="hint">no cycles yet</span>}
+            <span className="label">Recent briefs</span>
+            {cycles.length === 0 && <span className="hint">No cycles yet</span>}
             <div className="list">
               {cycles.slice(0, 6).map((c) => (
                 <button
@@ -184,7 +186,7 @@ export default function AskPane({
           </div>
 
           <div className="section tight">
-            <span className="label">session history</span>
+            <span className="label">Session history</span>
             <div className="list">
               {cycles.map((c) => (
                 <button
@@ -195,12 +197,12 @@ export default function AskPane({
                   onClick={() => onAttachCycle(c)}
                 >
                   <span className="k">
-                    cycle r{c.round} · {c.status}
+                    Cycle r{c.round} · {c.status}
                   </span>
                   <span className="v">{c.provider || "—"}</span>
                 </button>
               ))}
-              {cycles.length === 0 && <span className="hint">run a cycle to build history</span>}
+              {cycles.length === 0 && <span className="hint">Run a cycle to build history</span>}
             </div>
           </div>
         </>
@@ -208,7 +210,7 @@ export default function AskPane({
 
       {section === "files" && (
         <div className="section tight">
-          <span className="label">uploads</span>
+          <span className="label">Uploads</span>
           <input
             ref={fileRef}
             type="file"
@@ -223,20 +225,20 @@ export default function AskPane({
             data-tip="FASTA becomes a root commit with a sequence only; PDB/mmCIF becomes a commit that carries the uploaded coordinates; CSV is read as assay results"
             tabIndex={0}
           >
-            fasta · pdb · mmcif · csv
+            FASTA · PDB · mmCIF · CSV
           </span>
           {project && (
             <div className="list">
               <div className="list-row">
-                <span className="k">commits</span>
+                <span className="k">Commits</span>
                 <span className="v">{project.commit_count}</span>
               </div>
               <div className="list-row">
-                <span className="k">cycles</span>
+                <span className="k">Cycles</span>
                 <span className="v">{project.cycle_count}</span>
               </div>
               <div className="list-row">
-                <span className="k">branches</span>
+                <span className="k">Branches</span>
                 <span className="v">{project.branches.join(", ")}</span>
               </div>
             </div>
@@ -246,25 +248,30 @@ export default function AskPane({
 
       {section === "handoff" && (
         <div className="section tight">
-          <span className="label">hand to the swarm</span>
+          <span className="label">Hand to the swarm</span>
           <span className="hint">
-            {selectedLabel ? `from ${selectedLabel}` : "no version selected"}
+            {selectedLabel ? `From ${selectedLabel}` : "No version selected"}
           </span>
           <button
             type="button"
             className="tip"
-            data-tip="starts a design cycle with the current brief and refreshes the research daemon against the selected version — the two autonomy entry points the API exposes"
+            data-tip="queues one handoff task for the selected version with the current brief as notes, then starts a design cycle — the autonomy entry points the API exposes"
             disabled={!project || running || busy !== null}
             onClick={onHandoff}
           >
-            {busy === "handoff" ? "handing off…" : "hand off current brief"}
+            {busy === "handoff" ? "Handing off…" : "Hand off current brief"}
           </button>
+          {handoffNote && (
+            <span className="hint" data-testid="rail-handoff-receipt">
+              {handoffNote}
+            </span>
+          )}
           <span
             className="hint tip"
             data-tip="a cycle is one planned pass: propose, score, filter, shortlist. It does not loop until an objective is met, and it cannot be redirected mid-flight"
             tabIndex={0}
           >
-            one planned pass, not an open loop
+            One planned pass, not an open loop
           </span>
         </div>
       )}

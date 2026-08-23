@@ -40,6 +40,7 @@ TASK_KINDS = (
     "label_changed",
     "results_registered",
     "manual_refresh",
+    "handoff_requested",
 )
 
 TERMINAL = {"done", "failed", "coalesced"}
@@ -273,6 +274,7 @@ def research_pass(
     trigger: str,
     root_event_id: str | None = None,
     agents: devin_research.ResearchAgents | None = None,
+    host: str | None = None,
 ) -> dict:
     """The full pass: literature -> metrics -> merged path re-research -> wet-lab plan -> proposal."""
     settings = get_settings()
@@ -377,9 +379,10 @@ def research_pass(
         out["merged_path"] = merged["summary"]
 
         # 4. wet-lab plan ------------------------------------------------------------------
+        plan_kwargs = {"host": host} if host else {}
         plan = wetlab_loop.build_plan(
             db, rp, project, commit, event_id=root_event_id, provider=provider,
-            devin_session_url=rp.daemon_session_url,
+            devin_session_url=rp.daemon_session_url, **plan_kwargs,
         )
         plan_event = research_svc.append_event(
             db,
@@ -694,7 +697,10 @@ def run_task(db: Session, task: DaemonTask) -> dict:
             event_id = outcome["event_id"]
         else:
             root = _root_event(db, rp, task, commit)
-            outcome = research_pass(db, rp, commit, trigger=task.kind, root_event_id=root.id)
+            outcome = research_pass(
+                db, rp, commit, trigger=task.kind, root_event_id=root.id,
+                host=(task.payload or {}).get("host") or None,
+            )
             event_id = root.id
     except Exception as exc:  # a failed pass must not kill the daemon
         logger.exception("daemon task %s failed", task.id)
@@ -727,6 +733,8 @@ def _root_event(db: Session, rp: ResearchProject, task: DaemonTask, commit: Prot
             "scientist labels changed on "
             f"{commit.label or commit.id[:8]}:\n{label_svc.label_context(db, commit.id)}"
         )
+    elif task.kind == "handoff_requested":
+        kind, summary = "handoff", _handoff_summary(db, task, commit)
     elif task.kind == "diff_detected":
         kind, summary = "diff_detected", _diff_summary(db, commit)
     else:
@@ -737,6 +745,19 @@ def _root_event(db: Session, rp: ResearchProject, task: DaemonTask, commit: Prot
                  **(task.payload or {})},
         trigger=task.kind, provider=rp.daemon_provider or "local-simulation",
     )
+
+
+def _handoff_summary(db: Session, task: DaemonTask, commit: ProteinCommit) -> str:
+    """What the scientist handed over: the interaction state that opens this autonomous run."""
+    payload = task.payload or {}
+    lines = [
+        f"scientist handed {commit.label or commit.id[:8]} to the agent swarm",
+        f"host: {payload.get('host') or 'planner default'}",
+        f"labels this sitting: {len(payload.get('label_ids') or [])}",
+        f"notes: {payload.get('notes') or 'none'}",
+        f"labels on this version:\n{label_svc.label_context(db, commit.id)}",
+    ]
+    return "\n".join(lines)
 
 
 def _diff_summary(db: Session, commit: ProteinCommit) -> str:

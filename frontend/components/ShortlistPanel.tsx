@@ -37,12 +37,12 @@ export default function ShortlistPanel({
           {econ.shortlist_size} of {econ.candidate_pool} candidates ordered
         </span>
         <span className="badge devin">{money(econ.spend_avoided_usd)} spend avoided</span>
-        <span className="badge">shortlist {money(econ.shortlist_cost_usd)}</span>
+        <span className="badge">Shortlist {money(econ.shortlist_cost_usd)}</span>
         <span className="badge">{money(econ.cost_per_candidate_usd)} per candidate</span>
         <span className="badge">
           {pack.validation.measured_hit_rate === null
-            ? "no measured results yet"
-            : `measured hit rate ${(pack.validation.measured_hit_rate * 100).toFixed(0)}% (n=${pack.validation.measured_results})`}
+            ? "No measured results yet"
+            : `Measured hit rate ${(pack.validation.measured_hit_rate * 100).toFixed(0)}% (n=${pack.validation.measured_results})`}
         </span>
       </div>
       <p className="hint" style={{ marginTop: 0 }}>
@@ -59,7 +59,7 @@ export default function ShortlistPanel({
           {(["csv", "json", "fasta"] as const).map((fmt) => (
             <a key={fmt} href={api.downloadUrl(`/cycles/${cycleId}/export?fmt=${fmt}`)} download>
               <button className="secondary" type="button">
-                export {fmt.toUpperCase()}
+                Export {fmt.toUpperCase()}
               </button>
             </a>
           ))}
@@ -81,14 +81,14 @@ export default function ShortlistPanel({
               <td className="mono">{item.rank}</td>
               <td>
                 <b>{item.label}</b>
-                <div className="muted">{item.mutations.filter(Boolean).join(", ") || "parent"}</div>
+                <div className="muted">{item.mutations.filter(Boolean).join(", ") || "Parent"}</div>
                 <button
                   className="secondary"
                   type="button"
                   style={{ marginTop: 4, padding: "3px 8px", fontSize: 11 }}
                   onClick={() => setOpen(open === item.label ? null : item.label)}
                 >
-                  {open === item.label ? "hide" : "construct / primers / assays"}
+                  {open === item.label ? "Hide" : "Construct / primers / assays"}
                 </button>
                 {open === item.label && (
                   <div style={{ marginTop: 6 }}>
@@ -109,14 +109,14 @@ export default function ShortlistPanel({
                       <div key={a.assay} className="muted">
                         {a.assay} → measure {a.readout} ({money(a.estimated_cost_usd)})
                         <div className="muted">
-                          tests {a.tests_in_silico_proxy} = {String(a.in_silico_value)}{" "}
+                          Tests {a.tests_in_silico_proxy} = {String(a.in_silico_value)}{" "}
                           {a.in_silico_units}; {a.decision_rule}
                         </div>
                       </div>
                     ))}
                     {!item.geometry_usable && (
                       <div className="muted">
-                        coarse model failed its own compactness/clash check — structure-derived
+                        Coarse model failed its own compactness/clash check — structure-derived
                         scores are unreliable for this design
                       </div>
                     )}
@@ -128,8 +128,8 @@ export default function ShortlistPanel({
               </td>
               <td className="mono">
                 {item.composite_score.toFixed(3)}
-                <div className="muted">conf {item.confidence.toFixed(2)} (uncalibrated)</div>
-                {item.pareto_optimal && <span className="pill ok">pareto</span>}
+                <div className="muted">Conf {item.confidence.toFixed(2)} (uncalibrated)</div>
+                {item.pareto_optimal && <span className="pill ok">Pareto</span>}
               </td>
               <td className="mono">{money(item.cost.total_usd)}</td>
               <td>
@@ -158,7 +158,7 @@ export default function ShortlistPanel({
                 </td>
                 <td className="muted">
                   {r.excluded_reason ||
-                    (r.failed_filters.length ? `failed ${r.failed_filters.join(", ")}` : r.why)}
+                    (r.failed_filters.length ? `Failed ${r.failed_filters.join(", ")}` : r.why)}
                 </td>
               </tr>
             ))}

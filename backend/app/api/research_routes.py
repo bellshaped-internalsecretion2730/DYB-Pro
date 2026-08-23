@@ -10,11 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.devin.runner import provider_status
 from app.models import (
     MetricDefinition,
     Project,
     ProteinCommit,
     ResearchProject,
+    ResidueLabel,
     User,
     WetlabPlan,
 )
@@ -42,6 +44,17 @@ class LabelCreate(BaseModel):
     residues: list[int] = Field(default_factory=list)
     note: str = ""
     parent_label_id: str | None = None
+
+
+class HandoffRequest(BaseModel):
+    """The interaction state a scientist hands over when they stop driving the workspace."""
+
+    commit_id: str | None = None
+    host: str = ""
+    notes: str = ""
+    label_ids: list[str] = Field(
+        default_factory=list, description="labels written during this sitting"
+    )
 
 
 class PlanRequest(BaseModel):
@@ -195,6 +208,90 @@ def daemon_refresh(
     )
     db.commit()
     return {"task_id": task.id, "status": task.status, "daemon": daemon_svc.daemon_status(db, rp)}
+
+
+@router.post("/projects/{project_id}/research/handoff", tags=["research"], status_code=202)
+def swarm_handoff(
+    project_id: str,
+    body: HandoffRequest,
+    db: Session = Depends(get_db),
+    user: User = scientist,
+) -> dict:
+    """Hand the current interaction state to the swarm as one autonomous research/design run.
+
+    This is the explicit end of a sitting: the selected version, the labels written just now, the
+    expression host and any free-text notes are bundled into a single daemon task. It reuses the
+    daemon queue (so a double-click coalesces instead of launching two swarms) and reports the
+    provider honestly — when Devin is unconfigured the run is queued for the deterministic skill
+    pass and says so, rather than claiming a Devin session that does not exist.
+    """
+    project, rp = _campaign(db, project_id)
+    commit = _commit(db, body.commit_id) if body.commit_id else None
+    if commit is not None and commit.project_id != project.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "version not found")
+    if commit is None:
+        path = research_svc.version_path(db, rp)
+        commit = path[-1] if path else None
+    if commit is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "campaign has no protein version yet")
+
+    handed: list[ResidueLabel] = []
+    unknown: list[str] = []
+    for label_id in body.label_ids:
+        label = db.get(ResidueLabel, label_id)
+        if label is None or label.commit_id != commit.id:
+            unknown.append(label_id)
+            continue
+        handed.append(label)
+
+    context = {
+        "commit_id": commit.id,
+        "commit_label": commit.label,
+        "host": body.host.strip(),
+        "notes": body.notes.strip()[:4000],
+        "label_ids": [lb.id for lb in handed],
+        "labels": [
+            {"id": lb.id, "kind": lb.kind, "name": lb.name, "residues": lb.residues}
+            for lb in handed
+        ],
+        "unknown_label_ids": unknown,
+        "requested_by": user.email,
+    }
+    task = daemon_svc.notify(
+        db, project, "handoff_requested", commit_id=commit.id, payload=context,
+        debounce_seconds=0,
+    )
+    event = research_svc.append_event(
+        db,
+        rp,
+        kind="handoff",
+        summary=(
+            f"scientist handed {commit.label or commit.id[:8]} to the swarm: "
+            f"{len(handed)} label(s) this sitting, host {context['host'] or 'planner default'}"
+            + (f"; notes: {context['notes'][:200]}" if context["notes"] else "")
+        ),
+        payload={**context, "daemon_task_id": task.id, "task_status": task.status},
+        commit_id=commit.id,
+        role="research-daemon",
+        provider=rp.daemon_provider or "local-simulation",
+        trigger="handoff",
+    )
+    db.commit()
+    return {
+        "handoff": context,
+        "event_id": event.id,
+        "daemon_task": {
+            "id": task.id,
+            "kind": task.kind,
+            "status": task.status,
+            "commit_id": task.commit_id,
+            "coalesced_into": task.coalesced_into,
+            "run_after": task.run_after,
+        },
+        "provider": provider_status(),
+        "devin_session_url": rp.daemon_session_url,
+        "daemon": daemon_svc.daemon_status(db, rp),
+    }
 
 
 @router.post("/projects/{project_id}/research/tick", tags=["research"])
@@ -415,9 +512,14 @@ def create_label(
 
 
 @router.get("/commits/{commit_id}/wetlab/risk", tags=["wetlab"])
-def wetlab_risk(commit_id: str, db: Session = Depends(get_db), user: User = viewer) -> dict:
+def wetlab_risk(
+    commit_id: str,
+    host: str = wetlab_loop.DEFAULT_HOST,
+    db: Session = Depends(get_db),
+    user: User = viewer,
+) -> dict:
     commit, project, rp = _commit_campaign(db, commit_id)
-    prediction = wetlab_loop.predict_metrics(db, rp, commit)
+    prediction = wetlab_loop.predict_metrics(db, rp, commit, host=host)
     return {
         "commit_id": commit.id,
         "predictions": prediction["predictions"],

@@ -15,6 +15,7 @@ import {
   type Paper,
   type Proposal,
   type RiskReport,
+  type SwarmHandoff,
   type WetlabPlan,
   type WetlabResult,
 } from "@/lib/api";
@@ -38,6 +39,13 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
   const [unknownMetrics, setUnknownMetrics] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // What this sitting produced so far, so one explicit action can hand it to the swarm.
+  const [sitting, setSitting] = useState<{ labelIds: string[]; host: string; notes: string }>({
+    labelIds: [],
+    host: "",
+    notes: "",
+  });
+  const [handoff, setHandoff] = useState<SwarmHandoff | null>(null);
 
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
 
@@ -81,8 +89,15 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
 
   useEffect(() => {
     if (!commitId) return;
+    // labels "added this sitting" belong to the version that was on screen
+    setSitting((s) => ({ ...s, labelIds: [] }));
+    setHandoff(null);
     loadCommit(commitId).catch(fail);
   }, [commitId, loadCommit]);
+
+  const rememberContext = useCallback((ctx: { host: string; notes: string }) => {
+    setSitting((s) => (s.host === ctx.host && s.notes === ctx.notes ? s : { ...s, ...ctx }));
+  }, []);
 
   // keep the daemon pane live without hammering the whole campaign query
   useEffect(() => {
@@ -133,7 +148,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
             data-tip="Always-on loop: it watches version diffs, residue labels and incoming wet-lab results, then debounces them into research passes."
             tabIndex={0}
           >
-            research daemon
+            Research daemon
           </span>
         </h2>
         <div className="row" style={{ marginBottom: 10 }}>
@@ -159,22 +174,22 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
               })
             }
           >
-            {busy === "seed" ? "seeding campaign…" : "seed demo campaign"}
+            {busy === "seed" ? "Seeding campaign…" : "Seed demo campaign"}
           </button>
           {overview && (
             <span className="kpis" data-testid="campaign-summary">
               <span className="kpi">
                 <span className="k tip" data-tip={overview.campaign.name} tabIndex={0}>
-                  campaign
+                  Campaign
                 </span>
                 <span className="v">{overview.digest.version_count} versions</span>
               </span>
               <span className="kpi">
-                <span className="k">cached</span>
+                <span className="k">Cached</span>
                 <span className="v">{overview.digest.paper_count} papers</span>
               </span>
               <span className="kpi">
-                <span className="k">measured</span>
+                <span className="k">Measured</span>
                 <span className="v">{overview.digest.result_count} results</span>
               </span>
             </span>
@@ -196,7 +211,44 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
               await reload();
             })
           }
+          handoffContext={{
+            labelCount: sitting.labelIds.length,
+            host: sitting.host,
+            notes: sitting.notes,
+            ready: Boolean(commitId) && busy === null,
+          }}
+          onHandoff={() =>
+            act("handoff", async () => {
+              const res = await research.handoff(projectId, {
+                commit_id: commitId || undefined,
+                host: sitting.host,
+                notes: sitting.notes,
+                label_ids: sitting.labelIds,
+              });
+              setDaemon(res.daemon);
+              setHandoff(res);
+            })
+          }
         />
+        {handoff && (
+          <p className="hint" data-testid="handoff-receipt" style={{ marginTop: 8 }}>
+            Handed off {handoff.handoff.commit_label || handoff.handoff.commit_id.slice(0, 8)} to the
+            swarm: task {handoff.daemon_task.kind} is {handoff.daemon_task.status} with{" "}
+            {handoff.handoff.label_ids.length} label(s) this sitting, host{" "}
+            {handoff.handoff.host || "planner default"}. Provider{" "}
+            {handoff.provider.provider || "unavailable"}
+            {handoff.devin_session_url ? (
+              <>
+                {" · "}
+                <a href={handoff.devin_session_url} target="_blank" rel="noreferrer">
+                  Devin session
+                </a>
+              </>
+            ) : (
+              " · no Devin session yet"
+            )}
+          </p>
+        )}
       </section>
 
       <section className="panel">
@@ -206,7 +258,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
             data-tip="Residue labels are versioned research objects: saving one wakes the daemon and constrains the next proposal."
             tabIndex={0}
           >
-            label residues
+            Label residues
           </span>
         </h2>
         <LabelStudio
@@ -218,6 +270,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
               if (!commitId) return;
               const res = await research.addLabel(commitId, body);
               setDaemon(res.daemon);
+              setSitting((s) => ({ ...s, labelIds: [...s.labelIds, res.label.id] }));
               setLabels(await research.labels(commitId));
             });
           }}
@@ -231,7 +284,7 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
             data-tip="Immutable evidence: every daemon event and every paper it cached, with the skills and citations behind them."
             tabIndex={0}
           >
-            research cache
+            Research cache
           </span>
         </h2>
         <ResearchFeed events={overview?.events || []} papers={papers} />
@@ -244,10 +297,11 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
             data-tip="Cheapest informative assay pack for this version, then measured results whose residuals recalibrate the model."
             tabIndex={0}
           >
-            wet-lab loop
+            Wet-lab loop
           </span>
         </h2>
         <WetlabLoop
+          onContextChange={rememberContext}
           commit={commit}
           risk={risk}
           plan={plan}
@@ -257,7 +311,12 @@ export default function ResearchWorkspace({ projectId }: { projectId: string | n
           onPlan={async (host, maxAssays) => {
             await act("plan", async () => {
               if (!commitId) return;
-              setPlan(await research.buildPlan(commitId, { host, max_assays: maxAssays }));
+              const [built, rk] = await Promise.all([
+                research.buildPlan(commitId, { host, max_assays: maxAssays }),
+                research.risk(commitId, host),
+              ]);
+              setPlan(built);
+              setRisk(rk);
             });
           }}
           onSimulate={async (seed) => {

@@ -170,6 +170,82 @@ class FilterPerformanceOut(BaseModel):
     n_paired: int
     status: str
     n_required: int | None = None
+    classification_source: str | None = None
+    n_designs: int | None = None
+    conflicting: int | None = None
+    undecidable: int | None = None
+    outcome_disagreements: int | None = None
+
+
+class ObjectiveIn(BaseModel):
+    name: str
+    readout: str
+    unit: str
+    direction: str
+    threshold: float
+    must_pass: bool = True
+    weight: float = 0.0
+    proxy: str | None = None
+    proxy_calibrated: bool = False
+    assay_tiers: list[str]
+
+
+class ObjectiveOut(ObjectiveIn):
+    proxy_calibration: dict | None = None
+    proxy_calibration_status: str | None = None
+
+
+class ProblemSpecCreate(BaseModel):
+    objectives: list[ObjectiveIn]
+    hard_constraints: list[dict] = []
+    deciding_objective: str
+    notes: str = ""
+
+
+class ProblemSpecOut(BaseModel):
+    id: str
+    project_id: str
+    version: int
+    status: str
+    objectives: list[ObjectiveOut]
+    hard_constraints: list[dict] = []
+    deciding_objective: str
+    target_readout: str
+    notes: str
+    created_by: str | None = None
+    created_at: datetime
+    superseded_at: datetime | None = None
+
+
+class AutonomyDecisionOut(BaseModel):
+    id: str
+    project_id: str
+    cycle_id: str | None = None
+    commit_id: str | None = None
+    step: str
+    decision: str
+    actor: str
+    autonomy: str
+    basis: dict = {}
+    reversible: bool
+    confidence_basis: str
+    overridden_by: str | None = None
+    override_reason: str | None = None
+    overridden_at: datetime | None = None
+    created_at: datetime
+
+
+class AutonomyLedgerOut(BaseModel):
+    summary: dict
+    decisions: list[AutonomyDecisionOut]
+
+
+class OverrideIn(BaseModel):
+    reason: str
+
+
+class OverrideOut(AutonomyDecisionOut):
+    effect: str
 
 
 class ProviderStatus(BaseModel):

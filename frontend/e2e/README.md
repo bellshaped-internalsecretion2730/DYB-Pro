@@ -28,7 +28,7 @@ cd frontend && npm run e2e
 | --- | --- | --- |
 | `PLAYWRIGHT_BASE_URL` | `http://localhost:3000` | web app under test |
 | `PLAYWRIGHT_API_BASE` | `http://localhost:8000` | API used to seed the campaign before the UI run |
-| `PLAYWRIGHT_API_KEY` | `foldsmith-demo-scientist` | seeded scientist key |
+| `PLAYWRIGHT_API_KEY` | `dyb-pro-demo-scientist` | seeded scientist key |
 
 `demo.spec.ts` seeds the campaign over the API in `beforeAll` (the same call the **seed demo
 campaign** button makes, which takes ~1 minute), then drives the UI: pick the campaign, label a
