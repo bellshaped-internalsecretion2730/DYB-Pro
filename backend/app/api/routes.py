@@ -14,8 +14,11 @@ from app.api.pharma_routes import router as pharma_router
 from app.api.research_routes import router as lab_router
 from app.api.schemas import (
     AgentRunOut,
+    AssistantChatOut,
+    AssistantChatRequest,
     AutonomyDecisionOut,
     AutonomyLedgerOut,
+    BindingInputOut,
     BranchCreate,
     CommitOut,
     CycleCreate,
@@ -42,6 +45,7 @@ from app.models import (
     AutonomyDecision,
     Branch,
     DesignCycle,
+    DrugProgram,
     MeasuredResult,
     Observation,
     ProblemSpec,
@@ -61,6 +65,7 @@ from app.security import (
     usage_snapshot,
 )
 from app.services import (
+    analysis,
     autonomy,
     calibration,
     databases,
@@ -128,6 +133,13 @@ def providers() -> ProviderStatus:
 @router.get("/me", tags=["system"])
 def me(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     return usage_snapshot(db, user)
+
+
+@router.get("/assistant/models", tags=["system"])
+def assistant_models(user: User = viewer) -> dict:
+    del user
+    settings = get_settings()
+    return {"default": settings.openai_model, "models": settings.openai_chat_model_list}
 
 
 # -------------------------------------------------------------------- projects
@@ -244,6 +256,133 @@ def list_artifacts(
         }
         for a in rows
     ]
+
+
+@router.post(
+    "/projects/{project_id}/binding-inputs/{role}",
+    response_model=BindingInputOut,
+    tags=["projects"],
+)
+async def upload_binding_input(
+    project_id: str,
+    role: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = scientist,
+) -> BindingInputOut:
+    project = require_project(db, user, project_id, write=True)
+    try:
+        data = await file.read(ingest.MAX_BINDING_INPUT_BYTES + 1)
+        result = ingest.ingest_binding_input(
+            db, project, role, file.filename or f"{role}.pdb", data
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    event = research.enqueue(
+        db,
+        project.id,
+        "binding_input",
+        ref=result["id"],
+        detail=f"{role}:{result['filename']} sha256:{result['sha256'][:12]}",
+    )
+    db.commit()
+    enqueue_research_event(event.id)
+    return BindingInputOut(**result)
+
+
+@router.get(
+    "/projects/{project_id}/binding-inputs",
+    response_model=list[BindingInputOut],
+    tags=["projects"],
+)
+def list_binding_inputs(
+    project_id: str, db: Session = Depends(get_db), user: User = viewer
+) -> list[BindingInputOut]:
+    require_project(db, user, project_id)
+    return [BindingInputOut(**row) for row in ingest.binding_input_summaries(db, project_id)]
+
+
+@router.post(
+    "/projects/{project_id}/assistant/chat",
+    response_model=AssistantChatOut,
+    tags=["assistant"],
+)
+def assistant_chat(
+    project_id: str,
+    payload: AssistantChatRequest,
+    db: Session = Depends(get_db),
+    user: User = scientist,
+) -> AssistantChatOut:
+    project = require_project(db, user, project_id)
+    selected: ProteinCommit | None = None
+    if payload.selected_commit_id:
+        selected = _get_commit(db, user, payload.selected_commit_id)
+        if selected.project_id != project.id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "selected version is from another project")
+    cycle: DesignCycle | None = None
+    if payload.cycle_id:
+        cycle = _get_cycle(db, user, payload.cycle_id)
+        if cycle.project_id != project.id:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "cycle is from another project")
+    programs = db.scalars(
+        select(DrugProgram)
+        .where(DrugProgram.project_id == project.id)
+        .order_by(DrugProgram.created_at.desc())
+        .limit(8)
+    ).all()
+    context = {
+        "project": {
+            "id": project.id,
+            "name": project.name,
+            "goal": project.goal,
+            "target_name": project.target_name,
+            "target_sequence_length": len(project.target_sequence or ""),
+        },
+        "selected_version": (
+            {
+                "id": selected.id,
+                "label": selected.label,
+                "branch": selected.branch,
+                "message": selected.message,
+                "sequence_length": len(selected.sequence or ""),
+                "mutations": selected.mutations,
+                "scores": selected.scores,
+                "structure_source": selected.structure_source,
+            }
+            if selected
+            else None
+        ),
+        "cycle": (
+            {
+                "id": cycle.id,
+                "round": cycle.round,
+                "status": cycle.status,
+                "provider": cycle.provider,
+                "summary": cycle.summary,
+            }
+            if cycle
+            else None
+        ),
+        "binding_inputs": ingest.binding_input_summaries(db, project.id),
+        "programs": [
+            {
+                "id": program.id,
+                "name": program.name,
+                "target_name": program.target_name,
+                "stage": program.current_stage,
+                "status": program.status,
+            }
+            for program in programs
+        ],
+    }
+    result = analysis.chat_workspace(
+        messages=[message.model_dump() for message in payload.messages],
+        context=context,
+        requested_model=payload.model,
+        skill=payload.skill,
+        actions_enabled=payload.actions_enabled,
+    )
+    return AssistantChatOut(**result)
 
 
 @router.get("/artifacts/{artifact_id}/content", tags=["projects"])

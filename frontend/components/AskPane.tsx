@@ -3,7 +3,9 @@
 import type { RefObject } from "react";
 import { agentState } from "@/components/AgentSwarm";
 import type { RailSection } from "@/components/IconRail";
-import type { AgentRun, Cycle, Project } from "@/lib/api";
+import PharmaPane from "@/components/PharmaPane";
+import WorkspaceChat, { type WorkspaceTab } from "@/components/WorkspaceChat";
+import type { AgentRun, Cycle, GraphNode, Project } from "@/lib/api";
 
 const TITLES: Record<RailSection, string> = {
   ask: "Ask",
@@ -11,6 +13,7 @@ const TITLES: Record<RailSection, string> = {
   history: "History",
   files: "Files",
   handoff: "Handoff",
+  pharma: "Programs",
 };
 
 export default function AskPane({
@@ -24,6 +27,7 @@ export default function AskPane({
   busy,
   running,
   fileRef,
+  selected,
   selectedLabel,
   handoffNote,
   onSelectProject,
@@ -34,6 +38,10 @@ export default function AskPane({
   onUpload,
   onAttachCycle,
   onHandoff,
+  onOpenTab,
+  onResearch,
+  onSelectVersion,
+  onAdvanceProgram,
 }: {
   section: RailSection;
   projects: Project[];
@@ -45,28 +53,34 @@ export default function AskPane({
   busy: string | null;
   running: boolean;
   fileRef: RefObject<HTMLInputElement | null>;
+  selected: GraphNode | null;
   selectedLabel: string | null;
   handoffNote: string | null;
   onSelectProject: (p: Project) => void;
   onBriefChange: (value: string) => void;
-  onRun: () => void;
+  onRun: (briefOverride?: string) => Promise<void> | void;
   onCancel: () => void;
   onSeedDemo: () => void;
   onUpload: (files: FileList | null) => void;
   onAttachCycle: (c: Cycle) => void;
-  onHandoff: () => void;
+  onHandoff: (briefOverride?: string) => Promise<void> | void;
+  onOpenTab: (tab: WorkspaceTab) => void;
+  onResearch: () => Promise<void> | void;
+  onSelectVersion: (value: string) => boolean;
+  onAdvanceProgram: (programId: string) => Promise<void> | void;
 }) {
   const planned = cycle?.plan?.agents || [];
 
   return (
-    <div data-testid="ask-pane">
+    <div className={`ask-pane section-${section}`} data-testid="ask-pane">
       <div className="pane-header">
         <span className="label">{TITLES[section]}</span>
         <span className="meta">⌘K commands</span>
       </div>
 
       {section === "ask" && (
-        <div className="section">
+        <>
+        <div className="section compact project-switcher">
           <select
             value={project?.id || ""}
             aria-label="project"
@@ -75,39 +89,39 @@ export default function AskPane({
               if (p) onSelectProject(p);
             }}
           >
-            <option value="">— select project —</option>
+            <option value="">Select project</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} {p.is_demo ? "(demo)" : ""}
               </option>
             ))}
           </select>
-          <textarea
-            value={brief}
-            aria-label="research brief"
-            onChange={(e) => onBriefChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && project && !running) onRun();
-            }}
-            placeholder="Improve GB1 thermal stability without losing predicted Fc binding…"
-          />
           <div className="row">
-            <button type="button" onClick={onRun} disabled={!project || busy === "cycle" || running}>
-              {running ? "Cycle running…" : "Run design cycle"}
+            <button className="secondary tip" data-tip="Starts one provenance-tracked protein design cycle using the current project goal." type="button" onClick={() => onRun()} disabled={!project || busy === "cycle" || running}>
+              {running ? "Running…" : "Run"}
             </button>
             {running && (
               <button className="secondary" type="button" onClick={onCancel}>
                 Cancel
               </button>
             )}
-            <span className="kbd">⌘↵</span>
-          </div>
-          <div className="row">
-            <button className="secondary" type="button" onClick={onSeedDemo} disabled={busy === "seed"}>
-              Load demo project
+            <button className="ghost tip" data-tip="Creates or refreshes the local GB1 demonstration project." type="button" onClick={onSeedDemo} disabled={busy === "seed"}>
+              Demo
             </button>
           </div>
         </div>
+        <WorkspaceChat
+          project={project}
+          selected={selected}
+          cycle={cycle}
+          onRun={onRun}
+          onHandoff={onHandoff}
+          onOpenTab={onOpenTab}
+          onResearch={onResearch}
+          onSelectVersion={onSelectVersion}
+          onAdvanceProgram={onAdvanceProgram}
+        />
+        </>
       )}
 
       {section === "agents" && (
@@ -257,7 +271,7 @@ export default function AskPane({
             className="tip"
             data-tip="queues one handoff task for the selected version with the current brief as notes, then starts a design cycle — the autonomy entry points the API exposes"
             disabled={!project || running || busy !== null}
-            onClick={onHandoff}
+            onClick={() => onHandoff()}
           >
             {busy === "handoff" ? "Handing off…" : "Hand off current brief"}
           </button>
@@ -275,6 +289,8 @@ export default function AskPane({
           </span>
         </div>
       )}
+
+      {section === "pharma" && <PharmaPane project={project} />}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -257,3 +258,49 @@ class ProviderStatus(BaseModel):
     local_simulation_allowed: bool
     openai_configured: bool
     error: str | None = None
+
+
+class AssistantMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class AssistantChatRequest(BaseModel):
+    messages: list[AssistantMessage] = Field(min_length=1, max_length=10)
+    selected_commit_id: str | None = None
+    cycle_id: str | None = None
+    model: str | None = Field(default=None, max_length=80)
+    skill: Literal["workflow", "structure", "research", "drug-discovery"] = "workflow"
+    actions_enabled: bool = True
+
+
+class AssistantAction(BaseModel):
+    type: Literal[
+        "run_cycle",
+        "handoff",
+        "open_tab",
+        "trigger_research",
+        "select_version",
+        "advance_program",
+    ]
+    value: str = Field(default="", max_length=1000)
+    reason: str = Field(default="", max_length=300)
+
+
+class AssistantChatOut(BaseModel):
+    text: str
+    actions: list[AssistantAction] = Field(default_factory=list)
+    provider: str
+    model: str
+    skill: str
+
+
+class BindingInputOut(BaseModel):
+    id: str
+    role: Literal["target", "ligand"]
+    kind: str
+    filename: str
+    sha256: str
+    size: int
+    atom_count: int | None = None
+    created_at: datetime

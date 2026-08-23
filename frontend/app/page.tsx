@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import AgentSwarm from "@/components/AgentSwarm";
 import AskPane from "@/components/AskPane";
 import CommandPalette, { type Command } from "@/components/CommandPalette";
@@ -192,14 +191,18 @@ export default function Workspace() {
     }
   }
 
-  async function runCycle() {
+  async function runCycle(briefOverride?: string) {
     if (!project) return;
+    const nextBrief = typeof briefOverride === "string" && briefOverride.trim()
+      ? briefOverride.trim()
+      : brief || project.goal;
+    setBrief(nextBrief);
     setBusy("cycle");
     setError(null);
     setShortlist(null);
     try {
       const created = await api.post<Cycle>(`/projects/${project.id}/cycles`, {
-        brief: brief || project.goal,
+        brief: nextBrief,
         branch: "main",
       });
       setCycles((rows) => [created, ...rows.filter((c) => c.id !== created.id)]);
@@ -233,8 +236,12 @@ export default function Workspace() {
    * Hand-off uses the two autonomy entry points the API actually has: the research handoff task
    * for the selected version, and a design cycle for the current brief.
    */
-  async function handoff() {
+  async function handoff(briefOverride?: string) {
     if (!project) return;
+    const nextBrief = typeof briefOverride === "string" && briefOverride.trim()
+      ? briefOverride.trim()
+      : brief || project.goal;
+    setBrief(nextBrief);
     setBusy("handoff");
     setError(null);
     setShortlist(null);
@@ -244,7 +251,7 @@ export default function Workspace() {
       try {
         const queued = await lab.handoff(project.id, {
           commit_id: selectedId ?? undefined,
-          notes: brief || project.goal,
+          notes: nextBrief,
         });
         note = `Queued ${queued.daemon_task.kind} (${queued.daemon_task.status}) for ${
           queued.handoff.commit_label || queued.handoff.commit_id.slice(0, 8)
@@ -253,7 +260,7 @@ export default function Workspace() {
         /* the lab daemon is optional; the cycle below is the hand-off that always exists */
       }
       const created = await api.post<Cycle>(`/projects/${project.id}/cycles`, {
-        brief: brief || project.goal,
+        brief: nextBrief,
         branch: "main",
       });
       setCycles((rows) => [created, ...rows.filter((c) => c.id !== created.id)]);
@@ -274,6 +281,21 @@ export default function Workspace() {
       await api.post(`/cycles/${cycle.id}/cancel`);
     } catch (e) {
       fail(e);
+    }
+  }
+
+  async function advanceProgram(programId: string) {
+    if (!programId) return;
+    setBusy("program");
+    setError(null);
+    try {
+      await api.post(`/pharma/programs/${programId}/advance`);
+      setRail("pharma");
+    } catch (e) {
+      fail(e);
+      throw e;
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -348,34 +370,45 @@ export default function Workspace() {
   return (
     <>
       <header className="top">
-        <div className="brand">
-          DYB<span> Pro</span>
+        <div className="brand" title="DYB Pro protein design workspace">
+          <b>DYB</b><span> PRO</span>
         </div>
-        <span className="tagline">Pre-wetlab design OS</span>
         <ProviderBadge provider={provider} />
-        {provider?.openai_configured && <span className="badge">OpenAI analysis on</span>}
+        {provider?.openai_configured && (
+          <span className="badge" title="OpenAI powers the research chat and analysis.">AI</span>
+        )}
         <div className="grow" />
-        <Link href="/pharmakon">Pharmakon drug programs →</Link>
-        <button className="ghost" type="button" onClick={() => setPaletteOpen(true)}>
-          <span className="kbd">⌘K</span> Command palette
-        </button>
-        <input
-          type="text"
-          style={{ width: 190 }}
-          value={keyInput}
-          onChange={(e) => setKeyInput(e.target.value)}
-          aria-label="API key"
-        />
         <button
-          className="secondary"
+          className="ghost tip"
+          data-tip="Open the workspace command palette"
+          aria-label="Command palette"
           type="button"
-          onClick={() => {
-            setApiKey(keyInput);
-            window.location.reload();
-          }}
+          onClick={() => setPaletteOpen(true)}
         >
-          Use key
+          <span className="kbd">⌘K</span>
         </button>
+        <details className="access-menu">
+          <summary title="Workspace API access">Access</summary>
+          <div>
+            <input
+              type="password"
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              aria-label="API key"
+              placeholder="Workspace API key"
+            />
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => {
+                setApiKey(keyInput);
+                window.location.reload();
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        </details>
       </header>
 
       {error && (
@@ -392,9 +425,25 @@ export default function Workspace() {
         <aside className="pane left" aria-label="ask and agent control">
           <AskPane
             section={rail}
+            selected={selected}
             selectedLabel={selected?.label ?? selected?.short_id ?? null}
             handoffNote={handoffNote}
             onHandoff={handoff}
+            onOpenTab={setTab}
+            onResearch={triggerResearch}
+            onSelectVersion={(value) => {
+              const match = versions.find(
+                (version) =>
+                  version.id === value || version.short_id === value || version.label === value,
+              );
+              if (!match) return false;
+              setSelectedId(match.id);
+              setPasted(null);
+              setMarked([]);
+              setTab("structure");
+              return true;
+            }}
+            onAdvanceProgram={advanceProgram}
             projects={projects}
             project={project}
             cycles={cycles}

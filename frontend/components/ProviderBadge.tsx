@@ -7,17 +7,27 @@ export default function ProviderBadge({ provider }: { provider: Provider | null 
   if (provider.provider === "devin") {
     const reachable = provider.devin_reachable !== false;
     return (
-      <span className={reachable ? "badge devin" : "badge bad"}>
+      <span
+        className={reachable ? "badge devin" : "badge bad"}
+        title={
+          reachable
+            ? "Real Devin organization agents are connected."
+            : provider.error ?? "Check the server-side Devin credentials."
+        }
+      >
         {reachable
-          ? `Real Devin agents · ${provider.devin_api_flavor}`
-          : `Devin unreachable · ${provider.error ?? "check key"}`}
+          ? `Devin ${provider.devin_api_flavor}`
+          : "Devin offline"}
       </span>
     );
   }
   if (provider.provider === "local-simulation") {
     return (
-      <span className="badge sim" title="No Devin credentials configured — results are labelled local-simulation everywhere.">
-        local-simulation (no Devin key)
+      <span
+        className="badge sim"
+        title="No Devin credentials are configured. Runs use the honest local simulation provider."
+      >
+        Local
       </span>
     );
   }

@@ -17,6 +17,10 @@ ATOM      2  CA  THR A   2       3.800   0.000   0.000  1.00 20.00           C
 ATOM      3  CA  TYR A   3       7.600   0.000   0.000  1.00 20.00           C
 END
 """
+LIGAND_PDB = """HETATM    1  C1  LIG Z   1       1.000   2.000   3.000  1.00 20.00           C
+HETATM    2  O1  LIG Z   1       2.100   2.000   3.000  1.00 20.00           O
+END
+"""
 
 
 def _upload(client, project_id: str, name: str, body: str, role: str = "scientist"):
@@ -151,6 +155,73 @@ def test_unknown_and_empty_uploads_are_rejected(client):
         headers=headers("scientist"),
     )
     assert resp.status_code == 400
+
+
+def test_target_and_ligand_pdb_inputs_are_kept_as_distinct_artifacts(client):
+    project_id = _new_project(client)
+    target = client.post(
+        f"/api/projects/{project_id}/binding-inputs/target",
+        files={"file": ("target.pdb", io.BytesIO(PDB.encode()), "chemical/x-pdb")},
+        headers=headers("scientist"),
+    )
+    ligand = client.post(
+        f"/api/projects/{project_id}/binding-inputs/ligand",
+        files={"file": ("ligand.pdb", io.BytesIO(LIGAND_PDB.encode()), "chemical/x-pdb")},
+        headers=headers("scientist"),
+    )
+    assert target.status_code == 200, target.text
+    assert ligand.status_code == 200, ligand.text
+    assert target.json()["kind"] == "target_pdb"
+    assert target.json()["atom_count"] == 3
+    assert ligand.json()["kind"] == "ligand_pdb"
+    assert ligand.json()["atom_count"] == 2
+
+    listed = client.get(
+        f"/api/projects/{project_id}/binding-inputs", headers=headers("viewer")
+    ).json()
+    assert {row["role"] for row in listed} == {"target", "ligand"}
+    assert client.get(
+        f"/api/artifacts/{ligand.json()['id']}/content", headers=headers("viewer")
+    ).text == LIGAND_PDB
+
+
+def test_binding_input_validation_rejects_wrong_role_and_non_coordinates(client):
+    project_id = _new_project(client)
+    bad_role = client.post(
+        f"/api/projects/{project_id}/binding-inputs/receptor",
+        files={"file": ("x.pdb", io.BytesIO(PDB.encode()), "chemical/x-pdb")},
+        headers=headers("scientist"),
+    )
+    prose = client.post(
+        f"/api/projects/{project_id}/binding-inputs/ligand",
+        files={"file": ("x.pdb", io.BytesIO(b"not coordinates"), "chemical/x-pdb")},
+        headers=headers("scientist"),
+    )
+    assert bad_role.status_code == 400
+    assert prose.status_code == 400
+
+
+def test_workspace_chat_has_selected_context_and_executes_explicit_ui_commands(client):
+    project_id = _new_project(client)
+    commit_id = _upload(client, project_id, "wt.fasta", FASTA).json()["commits"][0]["id"]
+    response = client.post(
+        f"/api/projects/{project_id}/assistant/chat",
+        json={
+            "selected_commit_id": commit_id,
+            "messages": [{"role": "user", "content": "show lineage"}],
+            "actions_enabled": True,
+        },
+        headers=headers("scientist"),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["provider"] == "deterministic"
+    assert body["actions"] == [
+        {"type": "open_tab", "value": "lineage", "reason": "Open lineage."}
+    ]
+    models = client.get("/api/assistant/models", headers=headers("viewer")).json()
+    assert models["default"] == "gpt-5.6-terra"
+    assert models["models"][0] == "gpt-5.6-terra"
 
 
 # --------------------------------------------------------------------- cycles

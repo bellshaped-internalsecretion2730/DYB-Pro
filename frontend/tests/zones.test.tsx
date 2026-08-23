@@ -1,12 +1,24 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AgentSwarm, { agentState } from "@/components/AgentSwarm";
 import AskPane from "@/components/AskPane";
 import FoldStrip from "@/components/FoldStrip";
 import IconRail, { type RailSection } from "@/components/IconRail";
 import ProteinViewer, { residueIndex } from "@/components/ProteinViewer";
+import { api } from "@/lib/api";
 import { agents, cycle, nodes, project } from "./fixtures";
+
+beforeEach(() => {
+  vi.spyOn(api, "get").mockImplementation(async (path) => {
+    if (path === "/assistant/models") {
+      return { default: "gpt-5.6-terra", models: ["gpt-5.6-terra"] } as never;
+    }
+    return [] as never;
+  });
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("left zone — ask & agent control", () => {
   const renderPane = (section: RailSection = "ask") =>
@@ -25,6 +37,7 @@ describe("left zone — ask & agent control", () => {
         busy={null}
         running
         fileRef={createRef<HTMLInputElement>()}
+        selected={nodes[0]}
         onSelectProject={vi.fn()}
         onBriefChange={vi.fn()}
         onRun={vi.fn()}
@@ -32,16 +45,22 @@ describe("left zone — ask & agent control", () => {
         onSeedDemo={vi.fn()}
         onUpload={vi.fn()}
         onAttachCycle={vi.fn()}
+        onOpenTab={vi.fn()}
+        onResearch={vi.fn()}
+        onSelectVersion={vi.fn(() => true)}
+        onAdvanceProgram={vi.fn()}
       />,
     );
 
-  it("keeps the inline prompt and run controls in the ask section", () => {
+  it("keeps a context-aware chat and compact run controls in the ask section", async () => {
     renderPane();
-    expect(screen.getByLabelText("research brief")).toHaveValue("Improve GB1 thermal stability");
-    expect(screen.getByRole("button", { name: "Cycle running…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Load demo project" })).toBeEnabled();
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith("/assistant/models"));
+    expect(screen.getByLabelText("Ask the workspace agent")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Running…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Demo" })).toBeEnabled();
     expect(screen.getByLabelText("project")).toHaveValue(project.id);
     expect(screen.queryByLabelText("upload sequences or structures")).toBeNull();
+    expect(screen.getByText("GB1-v12")).toBeInTheDocument();
   });
 
   it("keeps uploads reachable from the files section", () => {
@@ -67,6 +86,14 @@ describe("left zone — ask & agent control", () => {
     expect(screen.getByText("From GB1-v12")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Hand off current brief" })).toBeDisabled();
   });
+
+  it("moves the compact drug program and binding inputs into the rail", async () => {
+    renderPane("pharma");
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(`/projects/${project.id}/programs`));
+    expect(screen.getByTestId("pharma-pane")).toBeInTheDocument();
+    expect(screen.getByLabelText("target PDB")).toBeInTheDocument();
+    expect(screen.getByLabelText("ligand PDB")).toBeInTheDocument();
+  });
 });
 
 describe("left icon rail", () => {
@@ -80,9 +107,9 @@ describe("left icon rail", () => {
 
     rerender(<IconRail active="ask" onSelect={onSelect} />);
     fireEvent.keyDown(screen.getByTestId("icon-rail"), { key: "ArrowUp" });
-    expect(onSelect).toHaveBeenLastCalledWith("handoff");
+    expect(onSelect).toHaveBeenLastCalledWith("pharma");
     fireEvent.keyDown(screen.getByTestId("icon-rail"), { key: "End" });
-    expect(onSelect).toHaveBeenLastCalledWith("handoff");
+    expect(onSelect).toHaveBeenLastCalledWith("pharma");
   });
 });
 

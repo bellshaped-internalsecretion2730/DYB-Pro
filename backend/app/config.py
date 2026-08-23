@@ -55,8 +55,11 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str | None = None
-    openai_model: str = "gpt-4.1-mini"
+    openai_model: str = "gpt-5.6-terra"
     openai_vision_model: str = "gpt-4.1-mini"
+    openai_chat_models: str = (
+        "gpt-5.6-terra,gpt-5.6-sol,gpt-5.6-luna,gpt-5.4,gpt-4.1-mini"
+    )
 
     # Object storage
     s3_endpoint_url: str | None = None
@@ -86,6 +89,12 @@ class Settings(BaseSettings):
     @property
     def openai_enabled(self) -> bool:
         return bool(self.openai_api_key)
+
+    @property
+    def openai_chat_model_list(self) -> list[str]:
+        """Models exposed by the workspace selector, with the configured default first."""
+        configured = [m.strip() for m in self.openai_chat_models.split(",") if m.strip()]
+        return list(dict.fromkeys([self.openai_model, *configured]))
 
 
 @lru_cache

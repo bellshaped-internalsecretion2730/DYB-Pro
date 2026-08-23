@@ -78,6 +78,37 @@ export type Provider = {
   error?: string | null;
 };
 
+export type BindingInput = {
+  id: string;
+  role: "target" | "ligand";
+  kind: string;
+  filename: string;
+  sha256: string;
+  size: number;
+  atom_count?: number | null;
+  created_at: string;
+};
+
+export type AssistantAction = {
+  type:
+    | "run_cycle"
+    | "handoff"
+    | "open_tab"
+    | "trigger_research"
+    | "select_version"
+    | "advance_program";
+  value: string;
+  reason: string;
+};
+
+export type AssistantChatResponse = {
+  text: string;
+  actions: AssistantAction[];
+  provider: string;
+  model: string;
+  skill: string;
+};
+
 export type Project = {
   id: string;
   name: string;
